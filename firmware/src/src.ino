@@ -408,6 +408,8 @@ const unsigned char left_bitmap [] PROGMEM = {
 };
 
 String batteryStatus;
+unsigned long lastWriteTime = 0;
+BLEServer* pServer;
 
 // Extra Functions
 void setState(AppState newState) {
@@ -418,6 +420,7 @@ void setState(AppState newState) {
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
     Serial.print("Connected to phone...");
+    lastWriteTime = millis();
     deviceConnected = true;
   }
   void onDisconnect(BLEServer* pServer) {
@@ -430,6 +433,7 @@ class ServerCallbacks : public BLEServerCallbacks {
 
 class MyCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pCharacteristic) override {
+    lastWriteTime = millis();
     Serial.println("BLE written to...");
     String value = pCharacteristic->getValue();
     if (value.length() > 0) {
@@ -510,7 +514,7 @@ class MyCallbacks : public BLECharacteristicCallbacks {
 
 void setupBLE() {
   BLEDevice::init("ESP32");
-  BLEServer *pServer = BLEDevice::createServer();
+  pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
   
   BLEService *pService = pServer->createService("12345678-1234-1234-1234-1234567890ab");
@@ -562,6 +566,7 @@ void setup(void) {
   Serial.println("Screen On!");
   frame.createSprite(240, 240);
   setupBLE();
+  lastWriteTime = millis();
 }
 
 
@@ -639,6 +644,11 @@ void drawArrivedScreen() {
 static unsigned long lastBatteryUpdate = 0;
 
 void loop() {
+  if (deviceConnected && millis() - lastWriteTime > 10000) {
+    Serial.println("No write received for 10s — disconnecting client");
+    pServer->disconnect(pServer->getConnId());
+    deviceConnected = false;
+  }
   if (millis() - lastBatteryUpdate >= 1000) {  // every 1 second
     lastBatteryUpdate = millis();
     uint16_t result = DEC_ADC_Read();
