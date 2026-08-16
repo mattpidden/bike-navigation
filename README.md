@@ -69,6 +69,8 @@ You'll use this key in step 3.
 4. `flutter run` (with a device/emulator connected), or `flutter build apk` / `flutter build ios` for a release build.
 5. `flutter test` runs the test suite.
 
+**iOS only**: the bundle identifier and signing team in `app/ios/Runner.xcodeproj` are set to generic placeholders (`com.example.bikenavigation`, no team). Open `app/ios/Runner.xcworkspace` in Xcode and set your own bundle ID and Apple Developer Team under Runner → Signing & Capabilities before building for a real device — `flutter build ios`/`flutter run` on a device will fail without this. The Android build has no such step; it already ships with Flutter's generic `com.example.bike_navigation` and debug signing.
+
 The app also bundles `maps/map.bin` directly (`pubspec.yaml` references it via a relative path outside `app/`) for its own on-screen map — no separate copy step needed, but it does mean `maps/map.bin` must exist (it's committed, covering Central London by default).
 
 ## 4. Building your own area's map (optional)
