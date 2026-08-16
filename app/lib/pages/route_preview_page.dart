@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../notifiers/notifier.dart';
+import '../widgets/ble_status_badge.dart';
 import 'navigating_page.dart';
 
 /// Route summary + start button. Deliberately no live map here — once
@@ -45,7 +46,10 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
     final fetching = notifier.isFetchingRoute;
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.destination, overflow: TextOverflow.ellipsis)),
+      appBar: AppBar(
+        title: Text(widget.destination, overflow: TextOverflow.ellipsis),
+        actions: [BleStatusAction(status: notifier.bleStatus, onRetry: notifier.retryBleConnection)],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: fetching
@@ -64,7 +68,8 @@ class _RoutePreviewPageState extends State<RoutePreviewPage> {
                       const SizedBox(height: 24),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('Cycling directions'),
+                        title: const Text('Favour cycle paths'),
+                        subtitle: const Text('May take slightly longer, but sticks to cycle paths and away from heavier traffic'),
                         value: notifier.cycleRoute,
                         onChanged: (value) {
                           notifier.setCycleRoute(value);

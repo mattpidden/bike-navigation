@@ -26,7 +26,7 @@ class Notifier with ChangeNotifier {
   Notifier() {
     _directionsService = DirectionsService(dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '');
     _bleService = BleService();
-    _bleService.statusStream.listen((_) => notifyListeners());
+    _bleService.statusStream.listen(_onBleStatusChanged);
     _init();
   }
 
@@ -64,6 +64,11 @@ class Notifier with ChangeNotifier {
   double? get distanceRemainingM => _distanceRemainingM;
   bool get isFetchingRoute => _isFetchingRoute;
 
+  /// Nudges the background scan/connect loop to try immediately instead of
+  /// waiting for its next scheduled attempt. Safe to call anytime — a no-op
+  /// if already connected.
+  void retryBleConnection() => _bleService.start();
+
   Future<void> _init() async {
     _bleService.start();
     final allowed = await _requestLocationPermission();
@@ -71,6 +76,19 @@ class Notifier with ChangeNotifier {
     await _refreshUserLocation();
     _listenToLocation();
     _startTelemetryTimer();
+  }
+
+  // The ESP32's route buffer is RAM-only, so a fresh connection always starts
+  // with no route loaded — this covers both "start navigation before the
+  // wearable finished connecting" (sendRoute in startNavigation() silently
+  // no-ops if not connected yet, nothing else retried it) and "BLE dropped and
+  // reconnected mid-ride" (the device comes back with an empty route buffer
+  // regardless of what it had before).
+  void _onBleStatusChanged(BleStatus status) {
+    if (status == BleStatus.connected && _navMode == NavMode.navigating && _activeRoute != null) {
+      unawaited(_bleService.sendRoute(_projectRoute(_activeRoute!)));
+    }
+    notifyListeners();
   }
 
   Future<bool> _requestLocationPermission() async {

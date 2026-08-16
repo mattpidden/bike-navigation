@@ -140,7 +140,7 @@ class DirectionsService {
           )
         : Uri.parse(
             'https://maps.googleapis.com/maps/api/place/autocomplete/json'
-            '?input=${Uri.encodeComponent(input)}&location=$lat,$lng&radius=10000&key=$_apiKey',
+            '?input=${Uri.encodeComponent(input)}&location=$lat,$lng&radius=5000&key=$_apiKey',
           );
     final res = await http.get(url);
     if (res.statusCode != 200) return [];

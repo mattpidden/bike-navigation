@@ -272,7 +272,7 @@ void loop() {
     float voltage = result * conversion_factor;
     float percent = (voltage - 3.0f) / (4.1f - 3.0f) * 100.0f;
     percent = constrain(percent, 0.0f, 100.0f);
-    batteryStatus = String(voltage, 2) + "V  (" + String(percent, 0) + "%)";
+    batteryStatus = String(percent, 0) + "%";
     Serial.println(batteryStatus);
   }
   // deviceConnected or not, currentState HOME/NAVIGATION/ARRIVED or not — it's

@@ -45,13 +45,12 @@ class _NavigatingPageState extends State<NavigatingPage> {
       appBar: AppBar(
         title: Text(notifier.destinationName, overflow: TextOverflow.ellipsis),
         automaticallyImplyLeading: false,
+        actions: [BleStatusAction(status: notifier.bleStatus, onRetry: notifier.retryBleConnection)],
       ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            BleStatusBadge(status: notifier.bleStatus),
-            const SizedBox(height: 24),
             Icon(Icons.directions_bike, size: 64, color: Theme.of(context).colorScheme.primary),
             const SizedBox(height: 16),
             Text(
