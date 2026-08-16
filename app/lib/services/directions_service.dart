@@ -87,35 +87,16 @@ class DirectionsService {
   DirectionsService(this._apiKey);
   final String _apiKey;
 
+  /// [cycling] selects Google's routing profile, not just a preference
+  /// within one profile: `mode=bicycling` actually routes via cycle
+  /// lanes/paths and back streets where available, while `mode=driving`
+  /// gives the most direct route disregarding cycle infrastructure — a real
+  /// difference in Google's own routing engine, not something we're
+  /// simulating client-side.
   Future<DirectionsRoute?> fetchRoute({
     required LatLng origin,
     required String destination,
     required bool cycling,
-  }) async {
-    final routes = await _fetchRoutes(origin: origin, destination: destination, cycling: cycling, alternatives: false);
-    return routes.isEmpty ? null : routes.first;
-  }
-
-  /// Google has no parameter for "prefer cycle paths" as a distinct mode —
-  /// this just requests whatever alternative route candidates Google's own
-  /// bicycling engine offers (not guaranteed to be exactly 2, not labeled by
-  /// infrastructure preference) and sorts them fastest-first; the caller
-  /// decides how to present them (e.g. "Fastest" / "Alternative route").
-  Future<List<DirectionsRoute>> fetchRouteAlternatives({
-    required LatLng origin,
-    required String destination,
-    required bool cycling,
-  }) async {
-    final routes = await _fetchRoutes(origin: origin, destination: destination, cycling: cycling, alternatives: true);
-    routes.sort((a, b) => a.totalDurationSeconds.compareTo(b.totalDurationSeconds));
-    return routes;
-  }
-
-  Future<List<DirectionsRoute>> _fetchRoutes({
-    required LatLng origin,
-    required String destination,
-    required bool cycling,
-    required bool alternatives,
   }) async {
     final mode = cycling ? 'bicycling' : 'driving';
     final url = Uri.parse(
@@ -123,17 +104,16 @@ class DirectionsService {
       '?origin=${origin.latitude},${origin.longitude}'
       '&destination=${Uri.encodeComponent(destination)}'
       '&mode=$mode'
-      '&alternatives=$alternatives'
       '&key=$_apiKey',
     );
     final res = await http.get(url);
-    if (res.statusCode != 200) return [];
+    if (res.statusCode != 200) return null;
 
     final data = jsonDecode(res.body);
     final rawRoutes = data['routes'];
-    if (rawRoutes == null || rawRoutes.isEmpty) return [];
+    if (rawRoutes == null || rawRoutes.isEmpty) return null;
 
-    return [for (final raw in rawRoutes) _parseRoute(raw)].whereType<DirectionsRoute>().toList();
+    return _parseRoute(rawRoutes.first);
   }
 
   DirectionsRoute? _parseRoute(dynamic rawRoute) {

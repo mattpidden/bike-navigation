@@ -60,10 +60,13 @@ class Notifier with ChangeNotifier {
   // summary card is also the cheapest source of a pin location.
   LatLng? _selectedDestinationLatLng;
 
-  // Route comparison (populated once "Directions" is tapped) — Google has no
-  // "prefer cycle paths" parameter, so these are just its own alternative
-  // route candidates, fastest first; see DirectionsService.fetchRouteAlternatives.
+  // Route comparison (populated once "Directions" is tapped) — one driving-
+  // mode route ("Fastest") and one bicycling-mode route ("Cycle-friendly"),
+  // fetched in parallel. Parallel to _routeOptions: _routeOptionIsCycling[i]
+  // records which mode produced _routeOptions[i], since a failed fetch for
+  // one mode can leave the other list shorter than 2.
   List<DirectionsRoute> _routeOptions = [];
+  List<bool> _routeOptionIsCycling = [];
   int _selectedRouteOptionIndex = 0;
 
   // GETTERS
@@ -79,6 +82,7 @@ class Notifier with ChangeNotifier {
   double? get distanceRemainingM => _distanceRemainingM;
   bool get isFetchingRoute => _isFetchingRoute;
   List<DirectionsRoute> get routeOptions => _routeOptions;
+  List<bool> get routeOptionIsCycling => _routeOptionIsCycling;
   int get selectedRouteOptionIndex => _selectedRouteOptionIndex;
   DirectionsRoute? get selectedRouteOption =>
       _routeOptions.isEmpty ? null : _routeOptions[_selectedRouteOptionIndex];
@@ -235,8 +239,9 @@ class Notifier with ChangeNotifier {
     return route != null;
   }
 
-  /// Fetches both route options for comparison (called when "Directions" is
-  /// tapped, after a preview route already exists).
+  /// Fetches a driving-mode ("Fastest") and a bicycling-mode ("Cycle-friendly")
+  /// route in parallel for comparison (called when "Directions" is tapped,
+  /// after a preview route already exists).
   Future<bool> fetchRouteOptions() async {
     final origin = _userLocation;
     if (origin == null || _destinationName.isEmpty) return false;
@@ -244,22 +249,34 @@ class Notifier with ChangeNotifier {
     _isFetchingRoute = true;
     notifyListeners();
 
-    final routes = await _directionsService.fetchRouteAlternatives(
-      origin: origin,
-      destination: _destinationName,
-      cycling: _cycleRoute,
-    );
-    _routeOptions = routes;
-    _selectedRouteOptionIndex = 0;
+    final results = await Future.wait([
+      _directionsService.fetchRoute(origin: origin, destination: _destinationName, cycling: false),
+      _directionsService.fetchRoute(origin: origin, destination: _destinationName, cycling: true),
+    ]);
+
+    _routeOptions = [];
+    _routeOptionIsCycling = [];
+    for (var i = 0; i < results.length; i++) {
+      final route = results[i];
+      if (route == null) continue;
+      _routeOptions.add(route);
+      _routeOptionIsCycling.add(i == 1);
+    }
+    // Default to the cycle-friendly option when both came back — this is a
+    // bike computer, bicycling directions are the sensible default.
+    final cyclingIndex = _routeOptionIsCycling.indexOf(true);
+    _selectedRouteOptionIndex = cyclingIndex >= 0 ? cyclingIndex : 0;
+    if (_routeOptionIsCycling.isNotEmpty) _cycleRoute = _routeOptionIsCycling[_selectedRouteOptionIndex];
     _isFetchingRoute = false;
     notifyListeners();
-    return routes.isNotEmpty;
+    return _routeOptions.isNotEmpty;
   }
 
   /// Swaps which fetched route option is currently selected (tap-to-compare).
   void selectRouteOption(int index) {
     if (index < 0 || index >= _routeOptions.length) return;
     _selectedRouteOptionIndex = index;
+    _cycleRoute = _routeOptionIsCycling[index];
     notifyListeners();
   }
 
@@ -271,6 +288,7 @@ class Notifier with ChangeNotifier {
     _previewRoute = null;
     _selectedDestinationLatLng = null;
     _routeOptions = [];
+    _routeOptionIsCycling = [];
     _selectedRouteOptionIndex = 0;
     notifyListeners();
   }
@@ -335,6 +353,7 @@ class Notifier with ChangeNotifier {
     _destinationName = '';
     _selectedDestinationLatLng = null;
     _routeOptions = [];
+    _routeOptionIsCycling = [];
     _selectedRouteOptionIndex = 0;
     unawaited(_bleService.clearRoute());
     notifyListeners();

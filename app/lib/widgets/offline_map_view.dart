@@ -44,8 +44,8 @@ const double _maxMetersPerPixel = 200.0;
 // (white) / COLOR_ROUTE_CENTER (#ff9811) so a selected route on this browsing
 // map looks consistent with what the wearable draws during actual navigation.
 const Color _routeOrange = Color(0xFFFF9811);
-const double _routeBorderWidthM = 6.0;
-const double _routeCenterWidthM = 4.0;
+const double _routeBorderWidthM = 12.0;
+const double _routeCenterWidthM = 8.0;
 
 /// A point to draw on the map, in the same world-meters frame as the map
 /// data (see lib/services/ble_protocol.dart's projectLatLon).

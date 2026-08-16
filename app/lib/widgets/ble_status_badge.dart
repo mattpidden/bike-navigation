@@ -31,3 +31,21 @@ class BleStatusAction extends StatelessWidget {
     );
   }
 }
+
+/// The circular, elevated presentation of [BleStatusAction] used wherever it
+/// floats over map/preview content instead of sitting in a plain AppBar.
+class BleStatusBadge extends StatelessWidget {
+  final BleStatus status;
+  final VoidCallback onRetry;
+
+  const BleStatusBadge({super.key, required this.status, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 3,
+      shape: const CircleBorder(),
+      child: BleStatusAction(status: status, onRetry: onRetry),
+    );
+  }
+}

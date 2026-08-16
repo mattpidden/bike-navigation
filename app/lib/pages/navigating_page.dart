@@ -2,12 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../notifiers/notifier.dart';
+import '../services/ble_protocol.dart';
+import '../services/offline_map_data.dart';
 import '../widgets/ble_status_badge.dart';
+import '../widgets/offline_map_view.dart';
 import 'arrived_page.dart';
 
-/// Minimal status screen during active navigation. Deliberately no live map
-/// or turn list here — that's the wearable's job now. This just shows BLE
-/// connection health, distance remaining, and a way to cancel.
+const double _deviceSize = 220;
+const double _bezelWidth = 10;
+const double _deviceMetersPerPixel = 1.5;
+
+/// Status screen during active navigation. Centers on a small circular
+/// preview — styled like the wearable's own round display (black bezel,
+/// circular crop) — of the same live position + route the ESP32 is
+/// rendering, so it's clear the phone itself isn't what to look at anymore.
 class NavigatingPage extends StatefulWidget {
   const NavigatingPage({super.key});
 
@@ -17,6 +25,13 @@ class NavigatingPage extends StatefulWidget {
 
 class _NavigatingPageState extends State<NavigatingPage> {
   bool _navigatedToArrived = false;
+  late final Future<OfflineMapData> _mapDataFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _mapDataFuture = OfflineMapData.load();
+  }
 
   void _cancel() {
     context.read<Notifier>().stopNavigation();
@@ -44,24 +59,69 @@ class _NavigatingPageState extends State<NavigatingPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(notifier.destinationName, overflow: TextOverflow.ellipsis),
-        automaticallyImplyLeading: false,
-        actions: [BleStatusAction(status: notifier.bleStatus, onRetry: notifier.retryBleConnection)],
+        actions: [BleStatusBadge(status: notifier.bleStatus, onRetry: notifier.retryBleConnection)],
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.directions_bike, size: 64, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 16),
-            Text(
-              remaining == null ? 'Navigating...' : '${(remaining / 1000).toStringAsFixed(1)} km remaining',
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            const SizedBox(height: 8),
-            Text('Follow the map on your bike display', style: Theme.of(context).textTheme.bodyMedium),
-            const SizedBox(height: 48),
-            OutlinedButton(onPressed: _cancel, child: const Text('Cancel Navigation')),
-          ],
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              _buildDevicePreview(notifier),
+              const SizedBox(height: 32),
+              Text(
+                remaining == null ? 'Navigating...' : '${(remaining / 1000).toStringAsFixed(1)} km remaining',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Your bike display is now showing this map — you can lock your phone and put it away.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const Spacer(),
+              OutlinedButton(onPressed: _cancel, child: const Text('Cancel Navigation')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDevicePreview(Notifier notifier) {
+    final user = notifier.userLocation;
+    final local = user == null ? null : projectLatLon(user.latitude, user.longitude);
+    // Rebuilt fresh every frame rather than kept as persistent state — this
+    // preview always snaps to the current position (there's nothing to pan
+    // to, it just mirrors the wearable), so a new controller centered here
+    // is simpler than mutating a shared one mid-build.
+    final controller = MapViewController(
+      centerX: local?.x ?? 0,
+      centerY: local?.y ?? 0,
+      metersPerPixel: _deviceMetersPerPixel,
+    );
+    final route = notifier.activeRoute;
+
+    return Container(
+      width: _deviceSize,
+      height: _deviceSize,
+      padding: const EdgeInsets.all(_bezelWidth),
+      decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black),
+      child: ClipOval(
+        child: FutureBuilder<OfflineMapData>(
+          future: _mapDataFuture,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const ColoredBox(color: Colors.black);
+            return OfflineMapView(
+              data: snapshot.data!,
+              controller: controller,
+              markers: [if (local != null) MapMarker(x: local.x, y: local.y)],
+              routes: [
+                if (route != null)
+                  MapRoute(points: route.polylinePoints.map((p) => projectLatLon(p.latitude, p.longitude)).toList()),
+              ],
+            );
+          },
         ),
       ),
     );

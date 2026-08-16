@@ -13,7 +13,9 @@ import '../widgets/offline_map_view.dart';
 import 'navigating_page.dart';
 import 'search_page.dart';
 
-const Color _pinColor = Color(0xFF338AF3);
+// Matches the route line's orange (see offline_map_view.dart's _routeOrange).
+const Color _pinColor = Color(0xFFFF9811);
+const double _pinIconSize = 40.0;
 
 String _formatDistance(double meters) =>
     meters >= 1000 ? '${(meters / 1000).toStringAsFixed(1)} km' : '${meters.round()} m';
@@ -25,6 +27,11 @@ String _formatDuration(double seconds) {
   final remaining = minutes % 60;
   return remaining == 0 ? '$hours hr' : '$hours hr $remaining min';
 }
+
+// Notifier.fetchRouteOptions fetches one driving-mode and one bicycling-mode
+// route — a real difference in Google's own routing engine (bicycling mode
+// actually prefers cycle lanes/paths), not a relabeled alternative.
+String _routeLabel(bool cycling) => cycling ? 'Cycle-friendly' : 'Fastest';
 
 /// The app's home screen: a full-screen, freely pannable map (the same
 /// offline map data/style the wearable renders) with a Google-Maps-style
@@ -111,11 +118,6 @@ class _MapPageState extends State<MapPage> {
       final local = projectLatLon(user.latitude, user.longitude);
       markers.add(MapMarker(x: local.x, y: local.y));
     }
-    final dest = notifier.selectedDestinationLatLng;
-    if (dest != null) {
-      final local = projectLatLon(dest.latitude, dest.longitude);
-      markers.add(MapMarker(x: local.x, y: local.y, color: _pinColor, radiusPx: 10));
-    }
 
     final routeOptions = notifier.routeOptions;
     final routes = <MapRoute>[
@@ -139,6 +141,7 @@ class _MapPageState extends State<MapPage> {
           return Stack(
             children: [
               OfflineMapView(data: snapshot.data!, controller: _controller, markers: markers, routes: routes),
+              if (notifier.selectedDestinationLatLng != null) _buildDestinationPin(notifier),
               _buildTopBar(notifier),
               if (routeOptions.isNotEmpty) _buildRouteBadges(routeOptions, notifier),
               if (notifier.destinationName.isNotEmpty) _buildBottomCard(notifier),
@@ -146,6 +149,32 @@ class _MapPageState extends State<MapPage> {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildDestinationPin(Notifier notifier) {
+    final dest = notifier.selectedDestinationLatLng;
+    if (dest == null) return const SizedBox.shrink();
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final size = MediaQuery.sizeOf(context);
+        final local = projectLatLon(dest.latitude, dest.longitude);
+        final screenX = size.width / 2 + (local.x - _controller.centerX) / _controller.metersPerPixel;
+        final screenY = size.height / 2 - (local.y - _controller.centerY) / _controller.metersPerPixel;
+        // location_on's glyph point sits at the bottom-center of its bounding
+        // box, so that's what should land on the actual coordinate.
+        return Positioned(
+          left: screenX - _pinIconSize / 2,
+          top: screenY - _pinIconSize,
+          child: const Icon(
+            Icons.location_on,
+            color: _pinColor,
+            size: _pinIconSize,
+            shadows: [Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 2))],
+          ),
+        );
+      },
     );
   }
 
@@ -186,11 +215,7 @@ class _MapPageState extends State<MapPage> {
                 ),
               ),
               const SizedBox(width: 8),
-              Material(
-                elevation: 3,
-                shape: const CircleBorder(),
-                child: BleStatusAction(status: notifier.bleStatus, onRetry: notifier.retryBleConnection),
-              ),
+              BleStatusBadge(status: notifier.bleStatus, onRetry: notifier.retryBleConnection),
             ],
           ),
         ),
@@ -206,24 +231,25 @@ class _MapPageState extends State<MapPage> {
         return Stack(
           children: [
             for (var i = 0; i < routeOptions.length; i++)
-              if (routeOptions[i].polylinePoints.isNotEmpty)
-                _buildRouteBadge(routeOptions[i], i, notifier, size),
+              if (routeOptions[i].polylinePoints.isNotEmpty) _buildRouteBadge(routeOptions, i, notifier, size),
           ],
         );
       },
     );
   }
 
-  Widget _buildRouteBadge(DirectionsRoute route, int index, Notifier notifier, Size size) {
+  Widget _buildRouteBadge(List<DirectionsRoute> routeOptions, int index, Notifier notifier, Size size) {
+    final route = routeOptions[index];
     final mid = route.polylinePoints[route.polylinePoints.length ~/ 2];
     final local = projectLatLon(mid.latitude, mid.longitude);
     final screenX = size.width / 2 + (local.x - _controller.centerX) / _controller.metersPerPixel;
     final screenY = size.height / 2 - (local.y - _controller.centerY) / _controller.metersPerPixel;
     final selected = index == notifier.selectedRouteOptionIndex;
+    final textColor = selected ? Colors.white : Colors.black87;
 
     return Positioned(
-      left: screenX - 40,
-      top: screenY - 16,
+      left: screenX - 48,
+      top: screenY - 22,
       child: Material(
         elevation: 3,
         color: selected ? const Color(0xFFFF9811) : Colors.white,
@@ -233,12 +259,18 @@ class _MapPageState extends State<MapPage> {
           onTap: () => notifier.selectRouteOption(index),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Text(
-              _formatDuration(route.totalDurationSeconds),
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: selected ? Colors.white : Colors.black87,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _routeLabel(notifier.routeOptionIsCycling[index]),
+                  style: TextStyle(fontSize: 10, color: textColor.withValues(alpha: 0.85)),
+                ),
+                Text(
+                  _formatDuration(route.totalDurationSeconds),
+                  style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+                ),
+              ],
             ),
           ),
         ),
@@ -254,10 +286,11 @@ class _MapPageState extends State<MapPage> {
       left: 0,
       right: 0,
       bottom: 0,
-      child: SafeArea(
-        child: Material(
-          elevation: 6,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      child: Material(
+        elevation: 6,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        child: SafeArea(
+          top: false,
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -283,6 +316,7 @@ class _MapPageState extends State<MapPage> {
                   const Text('No route found.')
                 else ...[
                   Text(
+                    '${showingOptions ? '${_routeLabel(notifier.routeOptionIsCycling[notifier.selectedRouteOptionIndex])} · ' : ''}'
                     '${_formatDistance(route.totalDistanceMeters)} · ${_formatDuration(route.totalDurationSeconds)} · '
                     '${route.steps.length} steps',
                     style: Theme.of(context).textTheme.bodyMedium,
@@ -302,3 +336,4 @@ class _MapPageState extends State<MapPage> {
     );
   }
 }
+
