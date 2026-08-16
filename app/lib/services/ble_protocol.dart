@@ -29,7 +29,7 @@ const int modeNav = 1;
 const int modeArrived = 2;
 
 // Must match maps/build_map.py's ORIGIN_LAT/ORIGIN_LON/EARTH_R exactly — this is
-// the same home-origin local coordinate frame the baked on-device map uses.
+// the same local coordinate frame the baked on-device map uses.
 const double originLat = 51.4793;
 const double originLon = -0.1573;
 const double earthRadiusM = 6371000.0;

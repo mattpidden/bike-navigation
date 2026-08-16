@@ -16,14 +16,14 @@ void main() {
 
     test('matches build_map.py for a nearby point', () {
       final p = projectLatLon(51.4832, -0.1737);
-      expect(p.x, closeTo(-67.18929467975293, 1e-6));
-      expect(p.y, closeTo(529.7447483229193, 1e-6));
+      expect(p.x, closeTo(-1135.7312328333194, 1e-6));
+      expect(p.y, closeTo(433.66021391316343, 1e-6));
     });
 
     test('matches build_map.py for a farther, mixed-direction point', () {
       final p = projectLatLon(51.4700, -0.1500);
-      expect(p.x, closeTo(1574.1119359708568, 1e-6));
-      expect(p.y, closeTo(-938.0282833849955, 1e-6));
+      expect(p.x, closeTo(505.5389024197094, 1e-6));
+      expect(p.y, closeTo(-1034.1128177947514, 1e-6));
     });
   });
 

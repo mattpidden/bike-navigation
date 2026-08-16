@@ -23,7 +23,8 @@ AREAS_GEOJSON = MAPS_DIR / "areas_raw.geojson"
 THAMES_TIDAL_GEOJSON = MAPS_DIR / "thames_tidal_os.geojson"
 OUT_BIN = MAPS_DIR / "map.bin"
 
-# Home origin — everything is stored as meters relative to this point.
+# Origin — everything is stored as meters relative to this point. Battersea
+# Park, chosen as a public landmark rather than a residential address.
 ORIGIN_LAT = 51.4793
 ORIGIN_LON = -0.1573
 
