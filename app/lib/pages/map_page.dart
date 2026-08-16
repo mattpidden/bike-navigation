@@ -40,13 +40,24 @@ String _routeLabel(bool cycling) => cycling ? 'Cycle-friendly' : 'Direct route';
 // The driving-mode ("Direct route") route's own duration is Google's
 // car-speed estimate, which is misleading on a bike computer — Google has no
 // "give me this distance at cycling speed" option, so instead we derive a
-// duration from distance and a typical average urban cycling speed. Not turn-by-turn
-// accurate, but far more honest than showing how fast a car would do it.
-// The bicycling-mode ("Cycle-friendly") route already has a real cycling
-// estimate from Google and is left untouched.
-const double _avgCyclingSpeedMps = 15000 / 3600; // ~15 km/h
-double _displayDurationSeconds(DirectionsRoute route, bool cycling) =>
-    cycling ? route.totalDurationSeconds : route.totalDistanceMeters / _avgCyclingSpeedMps;
+// duration from distance and an average speed. The bicycling-mode
+// ("Cycle-friendly") route already has a real cycling estimate from Google
+// and is left untouched; better still, its distance/duration give us this
+// specific ride's actual average speed, which is a far better estimate for
+// the direct route than a generic constant — this cyclist, this day, this
+// route. Only falls back to a generic ~15 km/h when there's no cycling-mode
+// route yet to derive a real speed from (e.g. before "Directions" has ever
+// been tapped and the previewed route happens to be the driving one).
+const double _fallbackCyclingSpeedMps = 15000 / 3600; // ~15 km/h
+
+double _cyclingSpeedMps(List<DirectionsRoute> routeOptions, List<bool> isCycling) {
+  final i = isCycling.indexOf(true);
+  if (i < 0 || routeOptions[i].totalDurationSeconds <= 0) return _fallbackCyclingSpeedMps;
+  return routeOptions[i].totalDistanceMeters / routeOptions[i].totalDurationSeconds;
+}
+
+double _displayDurationSeconds(DirectionsRoute route, bool cycling, double cyclingSpeedMps) =>
+    cycling ? route.totalDurationSeconds : route.totalDistanceMeters / cyclingSpeedMps;
 
 /// The app's home screen: a full-screen, freely pannable map (the same
 /// offline map data/style the wearable renders) with a Google-Maps-style
@@ -255,27 +266,28 @@ class _MapPageState extends State<MapPage> {
   }
 
   // Driving and cycling directions often share most of their path (they
-  // only diverge for a short stretch), so their polyline midpoints — and
-  // therefore their badges — frequently land right on top of each other.
-  // When that happens, spread them vertically around their shared midpoint
-  // instead of letting them overlap.
+  // only diverge for a short stretch), so sampling both routes at their
+  // midpoint made their badges frequently land on the exact same spot.
+  // Sampling at different fractions along each route (1/3, 2/3) spreads them
+  // out along the shared stretch instead; the overlap check below is a
+  // fallback for whatever still collides (e.g. a very short shared route).
+  static const List<double> _badgeSampleFractions = [1 / 3, 2 / 3];
   static const double _badgeOverlapThresholdPx = 90.0;
   static const double _badgeSeparationPx = 34.0;
 
   List<Offset?> _computeBadgePositions(List<DirectionsRoute> routeOptions, Size size) {
-    final positions = <Offset?>[
-      for (final route in routeOptions)
-        if (route.polylinePoints.isEmpty)
-          null
-        else
-          _worldToScreen(
-            projectLatLon(
-              route.polylinePoints[route.polylinePoints.length ~/ 2].latitude,
-              route.polylinePoints[route.polylinePoints.length ~/ 2].longitude,
-            ),
-            size,
-          ),
-    ];
+    final positions = <Offset?>[];
+    for (var i = 0; i < routeOptions.length; i++) {
+      final points = routeOptions[i].polylinePoints;
+      if (points.isEmpty) {
+        positions.add(null);
+        continue;
+      }
+      final fraction = i < _badgeSampleFractions.length ? _badgeSampleFractions[i] : 0.5;
+      final pointIndex = (points.length * fraction).floor().clamp(0, points.length - 1);
+      final point = points[pointIndex];
+      positions.add(_worldToScreen(projectLatLon(point.latitude, point.longitude), size));
+    }
 
     if (positions.length == 2 && positions[0] != null && positions[1] != null) {
       final a = positions[0]!;
@@ -300,6 +312,7 @@ class _MapPageState extends State<MapPage> {
   Widget _buildRouteBadge(List<DirectionsRoute> routeOptions, int index, Notifier notifier, Offset center) {
     final route = routeOptions[index];
     final cycling = notifier.routeOptionIsCycling[index];
+    final speedMps = _cyclingSpeedMps(routeOptions, notifier.routeOptionIsCycling);
     final selected = index == notifier.selectedRouteOptionIndex;
     final textColor = selected ? Colors.white : Colors.black87;
 
@@ -323,7 +336,7 @@ class _MapPageState extends State<MapPage> {
                   style: TextStyle(fontSize: 10, color: textColor.withValues(alpha: 0.85)),
                 ),
                 Text(
-                  _formatDuration(_displayDurationSeconds(route, cycling)),
+                  _formatDuration(_displayDurationSeconds(route, cycling, speedMps)),
                   style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
                 ),
               ],
@@ -341,6 +354,7 @@ class _MapPageState extends State<MapPage> {
     // check — previewRoute was fetched using whatever cycleRoute mode was
     // active at the time, which is exactly what that getter still reflects.
     final cycling = showingOptions ? notifier.routeOptionIsCycling[notifier.selectedRouteOptionIndex] : notifier.cycleRoute;
+    final speedMps = _cyclingSpeedMps(notifier.routeOptions, notifier.routeOptionIsCycling);
 
     return Positioned(
       left: 0,
@@ -377,7 +391,7 @@ class _MapPageState extends State<MapPage> {
                 else ...[
                   Text(
                     '${showingOptions ? '${_routeLabel(cycling)} · ' : ''}'
-                    '${_formatDistance(route.totalDistanceMeters)} · ${_formatDuration(_displayDurationSeconds(route, cycling))} · '
+                    '${_formatDistance(route.totalDistanceMeters)} · ${_formatDuration(_displayDurationSeconds(route, cycling, speedMps))} · '
                     '${route.steps.length} steps',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
