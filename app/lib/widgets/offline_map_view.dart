@@ -40,6 +40,13 @@ const List<Color> _polyFillColors = [_colorGreen, _colorBlue];
 const double _minMetersPerPixel = 0.05;
 const double _maxMetersPerPixel = 200.0;
 
+// Route line style — mirrors firmware/src/MapRenderer.h's COLOR_ROUTE_BORDER
+// (white) / COLOR_ROUTE_CENTER (#ff9811) so a selected route on this browsing
+// map looks consistent with what the wearable draws during actual navigation.
+const Color _routeOrange = Color(0xFFFF9811);
+const double _routeBorderWidthM = 6.0;
+const double _routeCenterWidthM = 4.0;
+
 /// A point to draw on the map, in the same world-meters frame as the map
 /// data (see lib/services/ble_protocol.dart's projectLatLon).
 class MapMarker {
@@ -49,6 +56,17 @@ class MapMarker {
   final double radiusPx;
 
   const MapMarker({required this.x, required this.y, this.color = _markerRed, this.radiusPx = 8});
+}
+
+/// A route line to draw on the map, in the same world-meters frame as the
+/// map data. [selected] draws it solid with a white border (matching the
+/// wearable's in-navigation style); unselected draws it translucent with no
+/// border, for comparing route options before starting.
+class MapRoute {
+  final List<({double x, double y})> points;
+  final bool selected;
+
+  const MapRoute({required this.points, this.selected = true});
 }
 
 /// Owns the current pan/zoom state (world-meters center + zoom level) so it
@@ -74,12 +92,14 @@ class OfflineMapView extends StatefulWidget {
   final OfflineMapData data;
   final MapViewController controller;
   final List<MapMarker> markers;
+  final List<MapRoute> routes;
 
   const OfflineMapView({
     super.key,
     required this.data,
     required this.controller,
     this.markers = const [],
+    this.routes = const [],
   });
 
   @override
@@ -140,6 +160,7 @@ class _OfflineMapViewState extends State<OfflineMapView> {
                     centerY: widget.controller.centerY,
                     metersPerPixel: widget.controller.metersPerPixel,
                     markers: widget.markers,
+                    routes: widget.routes,
                   ),
                 );
               },
@@ -157,6 +178,7 @@ class _OfflineMapPainter extends CustomPainter {
   final double centerY;
   final double metersPerPixel;
   final List<MapMarker> markers;
+  final List<MapRoute> routes;
 
   _OfflineMapPainter({
     required this.data,
@@ -164,6 +186,7 @@ class _OfflineMapPainter extends CustomPainter {
     required this.centerY,
     required this.metersPerPixel,
     required this.markers,
+    required this.routes,
   });
 
   @override
@@ -187,6 +210,7 @@ class _OfflineMapPainter extends CustomPainter {
 
     _drawPolygons(canvas, viewRadiusM, sx, sy);
     _drawWays(canvas, viewRadiusM, sx, sy, pxPerM);
+    _drawRoutes(canvas, sx, sy, pxPerM);
     _drawMarkers(canvas, sx, sy);
   }
 
@@ -254,6 +278,36 @@ class _OfflineMapPainter extends CustomPainter {
     }
   }
 
+  void _drawRoutes(Canvas canvas, double Function(double) sx, double Function(double) sy, double pxPerM) {
+    for (final route in routes) {
+      if (route.points.length < 2) continue;
+      final path = Path()..moveTo(sx(route.points[0].x), sy(route.points[0].y));
+      for (var i = 1; i < route.points.length; i++) {
+        path.lineTo(sx(route.points[i].x), sy(route.points[i].y));
+      }
+      if (route.selected) {
+        canvas.drawPath(
+          path,
+          Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = (_routeBorderWidthM * pxPerM).clamp(1.0, double.infinity)
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round,
+        );
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = route.selected ? _routeOrange : _routeOrange.withValues(alpha: 0.4)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (_routeCenterWidthM * pxPerM).clamp(1.0, double.infinity)
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
+  }
+
   void _drawMarkers(Canvas canvas, double Function(double) sx, double Function(double) sy) {
     for (final m in markers) {
       canvas.drawCircle(Offset(sx(m.x), sy(m.y)), m.radiusPx, Paint()..color = m.color);
@@ -266,6 +320,7 @@ class _OfflineMapPainter extends CustomPainter {
         oldDelegate.centerY != centerY ||
         oldDelegate.metersPerPixel != metersPerPixel ||
         oldDelegate.data != data ||
-        oldDelegate.markers != markers;
+        oldDelegate.markers != markers ||
+        oldDelegate.routes != routes;
   }
 }
