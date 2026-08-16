@@ -23,11 +23,13 @@ class DirectionsRoute {
   final List<DirectionsStep> steps;
   final List<LatLng> polylinePoints;
   final double totalDistanceMeters;
+  final double totalDurationSeconds;
 
   const DirectionsRoute({
     required this.steps,
     required this.polylinePoints,
     required this.totalDistanceMeters,
+    required this.totalDurationSeconds,
   });
 
   /// Cumulative distance-along-route at the end of each step — what
@@ -90,21 +92,53 @@ class DirectionsService {
     required String destination,
     required bool cycling,
   }) async {
+    final routes = await _fetchRoutes(origin: origin, destination: destination, cycling: cycling, alternatives: false);
+    return routes.isEmpty ? null : routes.first;
+  }
+
+  /// Google has no parameter for "prefer cycle paths" as a distinct mode —
+  /// this just requests whatever alternative route candidates Google's own
+  /// bicycling engine offers (not guaranteed to be exactly 2, not labeled by
+  /// infrastructure preference) and sorts them fastest-first; the caller
+  /// decides how to present them (e.g. "Fastest" / "Alternative route").
+  Future<List<DirectionsRoute>> fetchRouteAlternatives({
+    required LatLng origin,
+    required String destination,
+    required bool cycling,
+  }) async {
+    final routes = await _fetchRoutes(origin: origin, destination: destination, cycling: cycling, alternatives: true);
+    routes.sort((a, b) => a.totalDurationSeconds.compareTo(b.totalDurationSeconds));
+    return routes;
+  }
+
+  Future<List<DirectionsRoute>> _fetchRoutes({
+    required LatLng origin,
+    required String destination,
+    required bool cycling,
+    required bool alternatives,
+  }) async {
     final mode = cycling ? 'bicycling' : 'driving';
     final url = Uri.parse(
       'https://maps.googleapis.com/maps/api/directions/json'
       '?origin=${origin.latitude},${origin.longitude}'
       '&destination=${Uri.encodeComponent(destination)}'
-      '&mode=$mode&key=$_apiKey',
+      '&mode=$mode'
+      '&alternatives=$alternatives'
+      '&key=$_apiKey',
     );
     final res = await http.get(url);
-    if (res.statusCode != 200) return null;
+    if (res.statusCode != 200) return [];
 
     final data = jsonDecode(res.body);
-    final routes = data['routes'];
-    if (routes == null || routes.isEmpty) return null;
+    final rawRoutes = data['routes'];
+    if (rawRoutes == null || rawRoutes.isEmpty) return [];
 
-    final rawSteps = routes[0]['legs'][0]['steps'] as List<dynamic>;
+    return [for (final raw in rawRoutes) _parseRoute(raw)].whereType<DirectionsRoute>().toList();
+  }
+
+  DirectionsRoute? _parseRoute(dynamic rawRoute) {
+    final leg = rawRoute['legs'][0];
+    final rawSteps = leg['steps'] as List<dynamic>;
     if (rawSteps.isEmpty) return null;
 
     final steps = <DirectionsStep>[];
@@ -128,9 +162,19 @@ class DirectionsService {
     }
 
     final totalDistance = steps.fold<double>(0.0, (sum, s) => sum + s.distanceMeters);
-    return DirectionsRoute(steps: steps, polylinePoints: fullPolyline, totalDistanceMeters: totalDistance);
+    final totalDuration = (leg['duration']?['value'] as num?)?.toDouble() ?? 0.0;
+    return DirectionsRoute(
+      steps: steps,
+      polylinePoints: fullPolyline,
+      totalDistanceMeters: totalDistance,
+      totalDurationSeconds: totalDuration,
+    );
   }
 
+  /// `location`+`radius` bias results toward nearby places; `origin` is a
+  /// separate parameter that additionally makes Google return a
+  /// `distance_meters` field on every prediction (straight-line distance
+  /// from `origin`) — both are sent together when a location is known.
   Future<List<dynamic>> placeAutocomplete(String input, {double? lat, double? lng}) async {
     if (input.isEmpty) return [];
     final url = (lat == null || lng == null)
@@ -140,7 +184,7 @@ class DirectionsService {
           )
         : Uri.parse(
             'https://maps.googleapis.com/maps/api/place/autocomplete/json'
-            '?input=${Uri.encodeComponent(input)}&location=$lat,$lng&radius=5000&key=$_apiKey',
+            '?input=${Uri.encodeComponent(input)}&location=$lat,$lng&radius=5000&origin=$lat,$lng&key=$_apiKey',
           );
     final res = await http.get(url);
     if (res.statusCode != 200) return [];

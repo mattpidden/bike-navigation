@@ -52,6 +52,20 @@ class Notifier with ChangeNotifier {
   double? _distanceRemainingM;
   bool _isFetchingRoute = false;
 
+  // The pin dropped on the map for a selected-but-not-yet-navigating
+  // destination. Derived from the preview route's own last step rather than
+  // a separate place-details lookup — Google resolves the destination to
+  // coordinates internally regardless of whether we passed it a place
+  // description or a raw address, so the route we already fetch for the
+  // summary card is also the cheapest source of a pin location.
+  LatLng? _selectedDestinationLatLng;
+
+  // Route comparison (populated once "Directions" is tapped) — Google has no
+  // "prefer cycle paths" parameter, so these are just its own alternative
+  // route candidates, fastest first; see DirectionsService.fetchRouteAlternatives.
+  List<DirectionsRoute> _routeOptions = [];
+  int _selectedRouteOptionIndex = 0;
+
   // GETTERS
   BleStatus get bleStatus => _bleService.status;
   bool get bleConnected => _bleService.isConnected;
@@ -61,8 +75,13 @@ class Notifier with ChangeNotifier {
   DirectionsRoute? get previewRoute => _previewRoute;
   DirectionsRoute? get activeRoute => _activeRoute;
   String get destinationName => _destinationName;
+  LatLng? get selectedDestinationLatLng => _selectedDestinationLatLng;
   double? get distanceRemainingM => _distanceRemainingM;
   bool get isFetchingRoute => _isFetchingRoute;
+  List<DirectionsRoute> get routeOptions => _routeOptions;
+  int get selectedRouteOptionIndex => _selectedRouteOptionIndex;
+  DirectionsRoute? get selectedRouteOption =>
+      _routeOptions.isEmpty ? null : _routeOptions[_selectedRouteOptionIndex];
 
   /// Nudges the background scan/connect loop to try immediately instead of
   /// waiting for its next scheduled attempt. Safe to call anytime — a no-op
@@ -195,7 +214,8 @@ class Notifier with ChangeNotifier {
     notifyListeners();
   }
 
-  /// Fetches a route to preview (distance/ETA) without starting navigation.
+  /// Fetches a route to preview (distance/ETA) without starting navigation,
+  /// and drops a pin at the resolved destination (see [_selectedDestinationLatLng]).
   Future<bool> fetchPreviewRoute(String destination) async {
     if (_userLocation == null) await _refreshUserLocation();
     final origin = _userLocation;
@@ -203,21 +223,65 @@ class Notifier with ChangeNotifier {
 
     _isFetchingRoute = true;
     _destinationName = destination;
+    _routeOptions = [];
+    _selectedRouteOptionIndex = 0;
     notifyListeners();
 
     final route = await _directionsService.fetchRoute(origin: origin, destination: destination, cycling: _cycleRoute);
     _previewRoute = route;
+    _selectedDestinationLatLng = route?.steps.isNotEmpty == true ? route!.steps.last.endLocation : null;
     _isFetchingRoute = false;
     notifyListeners();
     return route != null;
   }
 
+  /// Fetches both route options for comparison (called when "Directions" is
+  /// tapped, after a preview route already exists).
+  Future<bool> fetchRouteOptions() async {
+    final origin = _userLocation;
+    if (origin == null || _destinationName.isEmpty) return false;
+
+    _isFetchingRoute = true;
+    notifyListeners();
+
+    final routes = await _directionsService.fetchRouteAlternatives(
+      origin: origin,
+      destination: _destinationName,
+      cycling: _cycleRoute,
+    );
+    _routeOptions = routes;
+    _selectedRouteOptionIndex = 0;
+    _isFetchingRoute = false;
+    notifyListeners();
+    return routes.isNotEmpty;
+  }
+
+  /// Swaps which fetched route option is currently selected (tap-to-compare).
+  void selectRouteOption(int index) {
+    if (index < 0 || index >= _routeOptions.length) return;
+    _selectedRouteOptionIndex = index;
+    notifyListeners();
+  }
+
+  /// Clears a selected-but-not-started destination (e.g. the search field's
+  /// clear button) — lighter than [stopNavigation]/[_endNavigation], which
+  /// are for actually cancelling an in-progress ride.
+  void clearSelectedDestination() {
+    _destinationName = '';
+    _previewRoute = null;
+    _selectedDestinationLatLng = null;
+    _routeOptions = [];
+    _selectedRouteOptionIndex = 0;
+    notifyListeners();
+  }
+
   Future<void> startNavigation() async {
-    final route = _previewRoute;
+    final route = selectedRouteOption ?? _previewRoute;
     if (route == null) return;
 
     _activeRoute = route;
     _previewRoute = null;
+    _routeOptions = [];
     _navMode = NavMode.navigating;
     notifyListeners();
 
@@ -269,6 +333,9 @@ class Notifier with ChangeNotifier {
     _routeTracker = null;
     _distanceRemainingM = null;
     _destinationName = '';
+    _selectedDestinationLatLng = null;
+    _routeOptions = [];
+    _selectedRouteOptionIndex = 0;
     unawaited(_bleService.clearRoute());
     notifyListeners();
   }

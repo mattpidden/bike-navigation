@@ -1,7 +1,7 @@
 name: bike_navigation
 description: "Bike Navigation"
 publish_to: 'none'
-version: 1.0.0+4
+version: 1.0.0+6
 
 environment:
   sdk: ^3.5.3

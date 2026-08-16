@@ -60,6 +60,7 @@ void main() {
         ],
         polylinePoints: [],
         totalDistanceMeters: 150,
+        totalDurationSeconds: 60,
       );
       expect(route.stepBoundariesMeters, [100.0, 150.0]);
     });
