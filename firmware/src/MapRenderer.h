@@ -49,6 +49,19 @@ static const int MAP_FOCUS_X = 120;
 static const int MAP_FOCUS_Y = 160;
 static const uint16_t YOU_ARE_HERE_COLOR = COLOR_RED;
 
+// Live route overlay — filled in from BLE ROUTE_CHUNK packets, not baked map data.
+// Meters relative to the same home origin as everything else drawn here.
+struct RoutePoint {
+  float x, y;
+};
+
+static const uint16_t COLOR_ROUTE_CASING = RGB565(0x99, 0x5C, 0x0A);  // muted dark orange
+static const uint16_t COLOR_ROUTE_CENTER = RGB565(0xFF, 0x98, 0x11);  // #ff9811
+static const float ROUTE_CASING_WIDTH_M = 8.0f;
+static const float ROUTE_CENTER_WIDTH_M = 3.0f;
+static const float ROUTE_ARROW_SPACING_M = 20.0f;
+static const float ROUTE_ARROW_SIZE_M = 2.5f;
+
 static inline uint32_t mapReadU32(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static inline uint16_t mapReadU16(const uint8_t* p) { uint16_t v; memcpy(&v, p, 2); return v; }
 static inline int16_t  mapReadI16(const uint8_t* p) { int16_t v; memcpy(&v, p, 2); return v; }
@@ -56,7 +69,9 @@ static inline int16_t  mapReadI16(const uint8_t* p) { int16_t v; memcpy(&v, p, 2
 // posX/posY: current position in meters relative to the map origin (home).
 // headingDeg: degrees clockwise from north — the map rotates so this is always "up".
 // viewRadiusM: how many meters from posX/posY are visible at the screen edge.
-void drawMap(TFT_eSprite &frame, float posX, float posY, float headingDeg, float viewRadiusM) {
+// routePts/routeCount: the active route overlay, or nullptr/0 if none.
+void drawMap(TFT_eSprite &frame, float posX, float posY, float headingDeg, float viewRadiusM,
+             const RoutePoint* routePts, uint16_t routeCount) {
   const float pxPerM = (float)MAP_SCREEN_CX / viewRadiusM;
   const float theta = -headingDeg * DEG_TO_RAD;
   const float cosT = cosf(theta);
@@ -146,6 +161,56 @@ void drawMap(TFT_eSprite &frame, float posX, float posY, float headingDeg, float
       prevSx = sx;
       prevSy = sy;
       havePrev = true;
+    }
+  }
+
+  // --- Route overlay (drawn on top of the base map, under the "you are here" marker) ---
+  // Capped at a few hundred points (see ROUTE_MAX_POINTS in src.ino) so no per-route
+  // culling is needed — TFT_eSPI's own sprite clipping handles the off-screen parts cheaply.
+  if (routePts != nullptr && routeCount >= 2) {
+    float prevSx = toScreenX(routePts[0].x, routePts[0].y);
+    float prevSy = toScreenY(routePts[0].x, routePts[0].y);
+    for (uint16_t i = 1; i < routeCount; i++) {
+      float sx = toScreenX(routePts[i].x, routePts[i].y);
+      float sy = toScreenY(routePts[i].x, routePts[i].y);
+      frame.drawWideLine(prevSx, prevSy, sx, sy, ROUTE_CASING_WIDTH_M * pxPerM, COLOR_ROUTE_CASING);
+      prevSx = sx;
+      prevSy = sy;
+    }
+    prevSx = toScreenX(routePts[0].x, routePts[0].y);
+    prevSy = toScreenY(routePts[0].x, routePts[0].y);
+    for (uint16_t i = 1; i < routeCount; i++) {
+      float sx = toScreenX(routePts[i].x, routePts[i].y);
+      float sy = toScreenY(routePts[i].x, routePts[i].y);
+      frame.drawWideLine(prevSx, prevSy, sx, sy, ROUTE_CENTER_WIDTH_M * pxPerM, COLOR_ROUTE_CENTER);
+      prevSx = sx;
+      prevSy = sy;
+    }
+
+    // Direction arrows every ROUTE_ARROW_SPACING_M of arc length, built in world
+    // meters (like everything else) then transformed — keeps them consistent with
+    // the zoom scaling every other shape on the map already gets.
+    float distSinceArrow = ROUTE_ARROW_SPACING_M;  // draw one near the start too
+    for (uint16_t i = 1; i < routeCount; i++) {
+      float x0 = routePts[i - 1].x, y0 = routePts[i - 1].y;
+      float x1 = routePts[i].x, y1 = routePts[i].y;
+      float segLen = sqrtf((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
+      if (segLen == 0) continue;
+      distSinceArrow += segLen;
+      if (distSinceArrow < ROUTE_ARROW_SPACING_M) continue;
+      distSinceArrow = 0;
+
+      float ux = (x1 - x0) / segLen, uy = (y1 - y0) / segLen;
+      float mx = (x0 + x1) * 0.5f, my = (y0 + y1) * 0.5f;
+      float tipX = mx + ux * ROUTE_ARROW_SIZE_M, tipY = my + uy * ROUTE_ARROW_SIZE_M;
+      float backX = mx - ux * ROUTE_ARROW_SIZE_M, backY = my - uy * ROUTE_ARROW_SIZE_M;
+      float lx = -uy, ly = ux;  // perpendicular, world-space
+      float leftX = backX + lx * ROUTE_ARROW_SIZE_M * 0.6f, leftY = backY + ly * ROUTE_ARROW_SIZE_M * 0.6f;
+      float rightX = backX - lx * ROUTE_ARROW_SIZE_M * 0.6f, rightY = backY - ly * ROUTE_ARROW_SIZE_M * 0.6f;
+      frame.fillTriangle(toScreenX(tipX, tipY), toScreenY(tipX, tipY),
+                          toScreenX(leftX, leftY), toScreenY(leftX, leftY),
+                          toScreenX(rightX, rightY), toScreenY(rightX, rightY),
+                          COLOR_BG);
     }
   }
 

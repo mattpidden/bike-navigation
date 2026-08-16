@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import 'pages/home_page.dart';
 
 void main() async {
-  await dotenv.load(fileName: ".env");
+  await dotenv.load(fileName: "assets/.env");
   runApp(
     ChangeNotifierProvider(
       create: (_) => Notifier(),
