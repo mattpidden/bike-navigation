@@ -47,6 +47,10 @@
 	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Bike Navigation uses your location to show your position and provide turn-by-turn directions on the map.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Bike Navigation uses your location, including while your phone is locked or in your pocket, to keep tracking your position and provide turn-by-turn directions on your bike's display.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Bike Navigation uses Bluetooth to connect to your bike's display and send it your live position, heading, and route.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
