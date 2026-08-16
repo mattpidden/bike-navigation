@@ -44,7 +44,8 @@ The app uses Google's **Directions API** and **Places API** for routing and dest
 2. Enable **Directions API** and **Places API** for that project (APIs & Services → Library).
 3. Create an API key (APIs & Services → Credentials → Create Credentials → API key).
 4. Set up billing on the project — Google requires a billing account even to stay within the free monthly credit.
-5. **Restrict the key** (Credentials → your key → Application restrictions) to Android/iOS apps using your app's package name / bundle ID and signing certificate fingerprint. An unrestricted key embedded in a distributed app can be extracted and used by anyone.
+5. **Set API restrictions** (Credentials → your key → API restrictions → Restrict key) to just **Directions API** and **Places API** — the only two this app calls. This limits the blast radius if the key ever leaks: it can only be used to call these two APIs, nothing else on your account.
+6. **Application restrictions**: the app calls these APIs with plain HTTP requests (`http.get`) rather than through Google's native Android/iOS SDKs, so it doesn't send the package-name/cert headers that an "Android apps" or "iOS apps" restriction checks for — setting one would just break the app's requests. There isn't a clean restriction option for this key's actual usage pattern (a mobile app making direct REST calls); API restrictions above are your main protection. If you want tighter control, the real fix is routing these calls through your own backend and keeping the key server-side (restricted by IP) instead of embedding it in the app — this project doesn't do that today.
 
 You'll use this key in step 3.
 
