@@ -90,4 +90,4 @@ Issues and PRs are welcome. A few things worth knowing:
 
 ## License
 
-Not yet decided — treat this as "source available, all rights reserved" until a `LICENSE` file is added.
+[MIT](LICENSE) — covers the whole repo, including the CAD files.
