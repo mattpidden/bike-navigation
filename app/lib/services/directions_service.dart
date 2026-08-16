@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
@@ -83,6 +84,18 @@ String cleanInstruction(String instruction) {
   return clean.endsWith('.') ? clean : '$clean.';
 }
 
+// Google's Directions/Places APIs return HTTP 200 even when the request
+// failed (bad/restricted API key, quota exceeded, malformed params) — the
+// real outcome is in the body's "status" field, with "error_message" giving
+// the specific reason. Logging it here is the only way to see *why* a
+// request failed, since callers just get null/[] back.
+void _logIfNotOk(String endpoint, Map<String, dynamic> data) {
+  final status = data['status'];
+  if (status != null && status != 'OK') {
+    debugPrint('[DirectionsService] $endpoint status=$status error_message=${data['error_message']}');
+  }
+}
+
 class DirectionsService {
   DirectionsService(this._apiKey);
   final String _apiKey;
@@ -107,19 +120,33 @@ class DirectionsService {
       '&key=$_apiKey',
     );
     final res = await http.get(url);
-    if (res.statusCode != 200) return null;
+    if (res.statusCode != 200) {
+      debugPrint('[DirectionsService] directions HTTP ${res.statusCode}: ${res.body}');
+      return null;
+    }
 
     final data = jsonDecode(res.body);
+    _logIfNotOk('directions', data);
     final rawRoutes = data['routes'];
-    if (rawRoutes == null || rawRoutes.isEmpty) return null;
+    if (rawRoutes == null || rawRoutes.isEmpty) {
+      debugPrint('[DirectionsService] directions mode=$mode status=${data['status']} returned no routes');
+      return null;
+    }
 
-    return _parseRoute(rawRoutes.first);
+    final route = _parseRoute(rawRoutes.first, mode);
+    if (route == null) {
+      debugPrint('[DirectionsService] directions mode=$mode: route came back but failed to parse (see previous log)');
+    }
+    return route;
   }
 
-  DirectionsRoute? _parseRoute(dynamic rawRoute) {
+  DirectionsRoute? _parseRoute(dynamic rawRoute, String mode) {
     final leg = rawRoute['legs'][0];
     final rawSteps = leg['steps'] as List<dynamic>;
-    if (rawSteps.isEmpty) return null;
+    if (rawSteps.isEmpty) {
+      debugPrint('[DirectionsService] directions mode=$mode: route leg has zero steps');
+      return null;
+    }
 
     final steps = <DirectionsStep>[];
     final fullPolyline = <LatLng>[];
@@ -167,8 +194,12 @@ class DirectionsService {
             '?input=${Uri.encodeComponent(input)}&location=$lat,$lng&radius=5000&origin=$lat,$lng&key=$_apiKey',
           );
     final res = await http.get(url);
-    if (res.statusCode != 200) return [];
+    if (res.statusCode != 200) {
+      debugPrint('[DirectionsService] autocomplete HTTP ${res.statusCode}: ${res.body}');
+      return [];
+    }
     final data = jsonDecode(res.body);
+    _logIfNotOk('autocomplete', data);
     return data['predictions'] ?? [];
   }
 
@@ -178,8 +209,12 @@ class DirectionsService {
       'https://maps.googleapis.com/maps/api/place/details/json?place_id=$placeId&key=$_apiKey',
     );
     final res = await http.get(url);
-    if (res.statusCode != 200) return null;
+    if (res.statusCode != 200) {
+      debugPrint('[DirectionsService] place details HTTP ${res.statusCode}: ${res.body}');
+      return null;
+    }
     final data = jsonDecode(res.body);
+    _logIfNotOk('place details', data);
     return data['result'];
   }
 }
