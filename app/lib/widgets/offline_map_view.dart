@@ -9,33 +9,35 @@ import '../services/offline_map_data.dart';
 // Style constants transcribed from firmware/src/MapRenderer.h / maps/visualiser.py.
 // Three independent renderers (C++, Python, this) — no shared config file
 // across languages, so keep these in sync by eye when the style changes.
-const Color _colorBg = Color(0xFF212121);
-const Color _colorGreen = Color(0xFF6DA544);
-const Color _colorBlue = Color(0xFF338AF3);
-const Color _roadMajor = Color(0xFFEEEEEE);
-const Color _roadMedium = Color(0xFFE0E0E0);
-const Color _roadMinor = Color(0xFFDBDBDB);
-const Color _markerRed = Color(0xFFD80027);
+// Public (not file-private) so widgets/device_preview_map.dart — the fourth,
+// wearable-mirroring renderer — can reuse them instead of duplicating.
+const Color colorBg = Color(0xFF212121);
+const Color colorGreen = Color(0xFF6DA544);
+const Color colorBlue = Color(0xFF338AF3);
+const Color roadMajor = Color(0xFFEEEEEE);
+const Color roadMedium = Color(0xFFE0E0E0);
+const Color roadMinor = Color(0xFFDBDBDB);
+const Color markerRed = Color(0xFFD80027);
 
-class _RoadStyle {
+class RoadStyle {
   final Color color;
   final double widthM;
-  const _RoadStyle(this.color, this.widthM);
+  const RoadStyle(this.color, this.widthM);
 }
 
 // class 0..6 -> motorway/trunk, primary, secondary/tertiary, residential, cycleway, path/track, water
-const List<_RoadStyle> _roadStyles = [
-  _RoadStyle(_roadMajor, 10.0),
-  _RoadStyle(_roadMajor, 7.0),
-  _RoadStyle(_roadMedium, 7.0),
-  _RoadStyle(_roadMinor, 3.5),
-  _RoadStyle(_roadMinor, 3.5),
-  _RoadStyle(_roadMinor, 3.5),
-  _RoadStyle(_colorBlue, 8.5),
+const List<RoadStyle> roadStyles = [
+  RoadStyle(roadMajor, 10.0),
+  RoadStyle(roadMajor, 7.0),
+  RoadStyle(roadMedium, 7.0),
+  RoadStyle(roadMinor, 3.5),
+  RoadStyle(roadMinor, 3.5),
+  RoadStyle(roadMinor, 3.5),
+  RoadStyle(colorBlue, 8.5),
 ];
 
 // polygon class 0..1 -> green, water
-const List<Color> _polyFillColors = [_colorGreen, _colorBlue];
+const List<Color> polyFillColors = [colorGreen, colorBlue];
 
 const double _minMetersPerPixel = 0.05;
 const double _maxMetersPerPixel = 200.0;
@@ -43,9 +45,9 @@ const double _maxMetersPerPixel = 200.0;
 // Route line style — mirrors firmware/src/MapRenderer.h's COLOR_ROUTE_BORDER
 // (white) / COLOR_ROUTE_CENTER (#ff9811) so a selected route on this browsing
 // map looks consistent with what the wearable draws during actual navigation.
-const Color _routeOrange = Color(0xFFFF9811);
-const double _routeBorderWidthM = 12.0;
-const double _routeCenterWidthM = 8.0;
+const Color routeOrange = Color(0xFFFF9811);
+const double routeBorderWidthM = 12.0;
+const double routeCenterWidthM = 8.0;
 
 /// A point to draw on the map, in the same world-meters frame as the map
 /// data (see lib/services/ble_protocol.dart's projectLatLon).
@@ -55,7 +57,7 @@ class MapMarker {
   final Color color;
   final double radiusPx;
 
-  const MapMarker({required this.x, required this.y, this.color = _markerRed, this.radiusPx = 8});
+  const MapMarker({required this.x, required this.y, this.color = markerRed, this.radiusPx = 8});
 }
 
 /// A route line to draw on the map, in the same world-meters frame as the
@@ -191,7 +193,7 @@ class _OfflineMapPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = _colorBg);
+    canvas.drawRect(Offset.zero & size, Paint()..color = colorBg);
 
     final viewportCx = size.width / 2;
     final viewportCy = size.height / 2;
@@ -217,7 +219,7 @@ class _OfflineMapPainter extends CustomPainter {
   void _drawPolygons(Canvas canvas, double viewRadiusM, double Function(double) sx, double Function(double) sy) {
     // Batched per class (2 classes) into one drawVertices call each, per the
     // validated rendering approach — flat triangle fill, no per-triangle Path.
-    for (var cls = 0; cls < _polyFillColors.length; cls++) {
+    for (var cls = 0; cls < polyFillColors.length; cls++) {
       final screenVerts = <double>[];
       for (final poly in data.polygons) {
         if (poly.cls != cls) continue;
@@ -234,7 +236,7 @@ class _OfflineMapPainter extends CustomPainter {
         vertices,
         BlendMode.srcOver,
         Paint()
-          ..color = _polyFillColors[cls]
+          ..color = polyFillColors[cls]
           ..isAntiAlias = false,
       );
     }
@@ -249,8 +251,8 @@ class _OfflineMapPainter extends CustomPainter {
   ) {
     // Batched per class (7 classes) into one combined Path each, per the
     // validated rendering approach — cuts ~20,500 draw calls down to ~7.
-    for (var cls = 0; cls < _roadStyles.length; cls++) {
-      final style = _roadStyles[cls];
+    for (var cls = 0; cls < roadStyles.length; cls++) {
+      final style = roadStyles[cls];
       final path = Path();
       var any = false;
       for (final way in data.ways) {
@@ -291,7 +293,7 @@ class _OfflineMapPainter extends CustomPainter {
           Paint()
             ..color = Colors.white
             ..style = PaintingStyle.stroke
-            ..strokeWidth = (_routeBorderWidthM * pxPerM).clamp(1.0, double.infinity)
+            ..strokeWidth = (routeBorderWidthM * pxPerM).clamp(1.0, double.infinity)
             ..strokeCap = StrokeCap.round
             ..strokeJoin = StrokeJoin.round,
         );
@@ -299,9 +301,9 @@ class _OfflineMapPainter extends CustomPainter {
       canvas.drawPath(
         path,
         Paint()
-          ..color = route.selected ? _routeOrange : _routeOrange.withValues(alpha: 0.4)
+          ..color = route.selected ? routeOrange : routeOrange.withValues(alpha: 0.4)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = (_routeCenterWidthM * pxPerM).clamp(1.0, double.infinity)
+          ..strokeWidth = (routeCenterWidthM * pxPerM).clamp(1.0, double.infinity)
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round,
       );

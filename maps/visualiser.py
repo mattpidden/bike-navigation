@@ -60,8 +60,8 @@ POLY_STYLE = {
 # active-route overlay: orange (#ff9811) line with a white border on either side
 ROUTE_BORDER_COLOR = (0xFF, 0xFF, 0xFF)
 ROUTE_CENTER_COLOR = (0xFF, 0x98, 0x11)  # #ff9811
-ROUTE_BORDER_WIDTH_M = 6.0
-ROUTE_CENTER_WIDTH_M = 4.0
+ROUTE_BORDER_WIDTH_M = 12.0
+ROUTE_CENTER_WIDTH_M = 8.0
 
 DEFAULT_VIEW_RADIUS_M = 150.0
 MOVE_SPEED_MPS = 6.0  # ~13mph, a plausible cycling speed

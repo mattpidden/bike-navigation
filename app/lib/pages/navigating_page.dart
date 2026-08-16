@@ -5,17 +5,18 @@ import '../notifiers/notifier.dart';
 import '../services/ble_protocol.dart';
 import '../services/offline_map_data.dart';
 import '../widgets/ble_status_badge.dart';
-import '../widgets/offline_map_view.dart';
+import '../widgets/device_preview_map.dart';
+import '../widgets/offline_map_view.dart' show MapRoute;
 import 'arrived_page.dart';
 
 const double _deviceSize = 220;
 const double _bezelWidth = 10;
-const double _deviceMetersPerPixel = 1.5;
 
 /// Status screen during active navigation. Centers on a small circular
 /// preview — styled like the wearable's own round display (black bezel,
-/// circular crop) — of the same live position + route the ESP32 is
-/// rendering, so it's clear the phone itself isn't what to look at anymore.
+/// circular crop, heading-up rotation, same look-ahead focus point) of the
+/// same live position + route the ESP32 is rendering, so it's clear the
+/// phone itself isn't what to look at anymore.
 class NavigatingPage extends StatefulWidget {
   const NavigatingPage({super.key});
 
@@ -59,7 +60,10 @@ class _NavigatingPageState extends State<NavigatingPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(notifier.destinationName, overflow: TextOverflow.ellipsis),
-        actions: [BleStatusBadge(status: notifier.bleStatus, onRetry: notifier.retryBleConnection)],
+        actions: [
+          BleStatusBadge(status: notifier.bleStatus, onRetry: notifier.retryBleConnection),
+          const SizedBox(width: 12),
+        ],
       ),
       body: SafeArea(
         child: Padding(
@@ -75,7 +79,7 @@ class _NavigatingPageState extends State<NavigatingPage> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Your bike display is now showing this map — you can lock your phone and put it away.',
+                'Your bike display is now showing this map. You can lock your phone and put it away.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
@@ -91,15 +95,6 @@ class _NavigatingPageState extends State<NavigatingPage> {
   Widget _buildDevicePreview(Notifier notifier) {
     final user = notifier.userLocation;
     final local = user == null ? null : projectLatLon(user.latitude, user.longitude);
-    // Rebuilt fresh every frame rather than kept as persistent state — this
-    // preview always snaps to the current position (there's nothing to pan
-    // to, it just mirrors the wearable), so a new controller centered here
-    // is simpler than mutating a shared one mid-build.
-    final controller = MapViewController(
-      centerX: local?.x ?? 0,
-      centerY: local?.y ?? 0,
-      metersPerPixel: _deviceMetersPerPixel,
-    );
     final route = notifier.activeRoute;
 
     return Container(
@@ -111,11 +106,13 @@ class _NavigatingPageState extends State<NavigatingPage> {
         child: FutureBuilder<OfflineMapData>(
           future: _mapDataFuture,
           builder: (context, snapshot) {
-            if (!snapshot.hasData) return const ColoredBox(color: Colors.black);
-            return OfflineMapView(
+            if (!snapshot.hasData || local == null) return const ColoredBox(color: Colors.black);
+            return DevicePreviewMap(
               data: snapshot.data!,
-              controller: controller,
-              markers: [if (local != null) MapMarker(x: local.x, y: local.y)],
+              posX: local.x,
+              posY: local.y,
+              headingDeg: notifier.heading,
+              hasHeading: notifier.hasHeading,
               routes: [
                 if (route != null)
                   MapRoute(points: route.polylinePoints.map((p) => projectLatLon(p.latitude, p.longitude)).toList()),

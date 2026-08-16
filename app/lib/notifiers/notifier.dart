@@ -36,6 +36,11 @@ class Notifier with ChangeNotifier {
 
   LatLng? _userLocation;
   double _heading = 0.0;
+  // Sticky once true — mirrors what the wearable itself does (a triangle
+  // once it's ever had a real heading, a plain dot before that; see
+  // firmware/src/MapRenderer.h's hasHeading param) rather than flipping back
+  // to "unknown" every time you stop moving.
+  bool _hasHeading = false;
   bool _cycleRoute = true; // a bike computer defaults to bicycling directions
 
   StreamSubscription<Position>? _positionSub;
@@ -73,6 +78,8 @@ class Notifier with ChangeNotifier {
   BleStatus get bleStatus => _bleService.status;
   bool get bleConnected => _bleService.isConnected;
   LatLng? get userLocation => _userLocation;
+  double get heading => _heading;
+  bool get hasHeading => _hasHeading;
   bool get cycleRoute => _cycleRoute;
   NavMode get navMode => _navMode;
   DirectionsRoute? get previewRoute => _previewRoute;
@@ -179,6 +186,7 @@ class Notifier with ChangeNotifier {
     _userLocation = LatLng(pos.latitude, pos.longitude);
     if (pos.speed >= _minHeadingSpeedMps) {
       _heading = pos.heading;
+      _hasHeading = true;
     }
 
     if (_navMode == NavMode.navigating && _routeTracker != null) {

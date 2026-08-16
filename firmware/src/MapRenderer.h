@@ -57,8 +57,8 @@ struct RoutePoint {
 
 static const uint16_t COLOR_ROUTE_BORDER = RGB565(0xFF, 0xFF, 0xFF);
 static const uint16_t COLOR_ROUTE_CENTER = RGB565(0xFF, 0x98, 0x11);  // #ff9811
-static const float ROUTE_BORDER_WIDTH_M = 6.0f;
-static const float ROUTE_CENTER_WIDTH_M = 4.0f;
+static const float ROUTE_BORDER_WIDTH_M = 12.0f;
+static const float ROUTE_CENTER_WIDTH_M = 8.0f;
 
 static inline uint32_t mapReadU32(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static inline uint16_t mapReadU16(const uint8_t* p) { uint16_t v; memcpy(&v, p, 2); return v; }
@@ -68,8 +68,11 @@ static inline int16_t  mapReadI16(const uint8_t* p) { int16_t v; memcpy(&v, p, 2
 // headingDeg: degrees clockwise from north — the map rotates so this is always "up".
 // viewRadiusM: how many meters from posX/posY are visible at the screen edge.
 // routePts/routeCount: the active route overlay, or nullptr/0 if none.
+// hasHeading: false only before the very first telemetry packet arrives — once
+// we have any heading value (even a stale/default one from the phone), it's
+// good enough to point the "you are here" marker with.
 void drawMap(TFT_eSprite &frame, float posX, float posY, float headingDeg, float viewRadiusM,
-             const RoutePoint* routePts, uint16_t routeCount) {
+             const RoutePoint* routePts, uint16_t routeCount, bool hasHeading) {
   const float pxPerM = (float)MAP_SCREEN_CX / viewRadiusM;
   // Bearings (0=north, clockwise) map to world vectors as (sin, cos), not (cos, sin)
   // like standard math angles — rotating by -heading here would actually rotate
@@ -192,9 +195,15 @@ void drawMap(TFT_eSprite &frame, float posX, float posY, float headingDeg, float
     }
   }
 
-  // "you are here" — fixed at the focus point, pointing up (heading-up mode).
-  frame.fillTriangle(MAP_FOCUS_X, MAP_FOCUS_Y - 16,
-                      MAP_FOCUS_X - 10, MAP_FOCUS_Y + 12,
-                      MAP_FOCUS_X + 10, MAP_FOCUS_Y + 12,
-                      YOU_ARE_HERE_COLOR);
+  // "you are here" — fixed at the focus point. A triangle pointing up
+  // (heading-up mode) once we have a direction to show it in; before that
+  // there's nothing meaningful to point, so just a dot.
+  if (hasHeading) {
+    frame.fillTriangle(MAP_FOCUS_X, MAP_FOCUS_Y - 16,
+                        MAP_FOCUS_X - 10, MAP_FOCUS_Y + 12,
+                        MAP_FOCUS_X + 10, MAP_FOCUS_Y + 12,
+                        YOU_ARE_HERE_COLOR);
+  } else {
+    frame.fillCircle(MAP_FOCUS_X, MAP_FOCUS_Y, 10, YOU_ARE_HERE_COLOR);
+  }
 }

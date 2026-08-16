@@ -238,11 +238,11 @@ void drawHomeScreen() {
   frame.fillSprite(COLOR_BG);
 
   if (!telemetryReceived) {
-    drawMap(frame, 0, 0, 0, MAP_VIEW_RADIUS_M, nullptr, 0);
+    drawMap(frame, 0, 0, 0, MAP_VIEW_RADIUS_M, nullptr, 0, false);
     drawCenteredText("Waiting for GPS...", 120, 1);
   } else {
     drawMap(frame, currentPosX, currentPosY, currentHeadingDeg, MAP_VIEW_RADIUS_M,
-            routeReady ? routeActiveBuf : nullptr, routeReady ? routeActiveCount : 0);
+            routeReady ? routeActiveBuf : nullptr, routeReady ? routeActiveCount : 0, true);
     if (currentState == STATE_ARRIVED) {
       drawCenteredText("ARRIVED", 120, 2, COLOR_RED);
     }
