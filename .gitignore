@@ -11,6 +11,9 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Claude Code's personal/local settings — not shared project config
+.claude/settings.local.json
+
 # Python
 __pycache__/
 *.pyc
