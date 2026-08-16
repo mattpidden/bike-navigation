@@ -194,6 +194,7 @@ class _DevicePreviewPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round,
       );
+      drawRouteChevrons(canvas, route.points, (wx, wy) => Offset(sx(wx, wy), sy(wx, wy)));
     }
   }
 

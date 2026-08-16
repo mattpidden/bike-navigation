@@ -63,6 +63,14 @@ ROUTE_CENTER_COLOR = (0xFF, 0x98, 0x11)  # #ff9811
 ROUTE_BORDER_WIDTH_M = 12.0
 ROUTE_CENTER_WIDTH_M = 8.0
 
+# direction chevrons drawn on top of the route — same orange fill / white
+# border as the route line itself, but wider so they stick out either side.
+CHEVRON_WIDTH_M = 22.0   # wider than ROUTE_BORDER_WIDTH_M so it pokes out both sides
+CHEVRON_LENGTH_M = 20.0
+CHEVRON_NOTCH_M = 8.0    # how far the back notch cuts forward, giving the arrow its "V"
+CHEVRON_BORDER_MARGIN_M = 3.0  # white outline thickness around each chevron
+CHEVRON_SPACING_M = 100.0  # real-world distance between chevrons along the route
+
 DEFAULT_VIEW_RADIUS_M = 150.0
 MOVE_SPEED_MPS = 6.0  # ~13mph, a plausible cycling speed
 ROTATE_SPEED_DPS = 90.0
@@ -78,6 +86,54 @@ def pick_demo_route(ways):
         return []
     candidates.sort(key=lambda w: math.hypot(w.cx, w.cy))
     return candidates[0].points
+
+
+def _chevron_local_points(width_m, length_m, notch_m):
+    """A forward-pointing arrow/flag shape in a local frame where +y is the
+    direction of travel and +x is to the right: a tip at the front and a
+    V-notch cut into the back edge, which is what actually reads as a
+    "chevron" rather than a plain triangle."""
+    half_w, half_l = width_m / 2, length_m / 2
+    return [
+        (0, half_l),               # front tip
+        (half_w, -half_l),         # back right
+        (0, -half_l + notch_m),    # back notch (pulled forward)
+        (-half_w, -half_l),        # back left
+    ]
+
+
+def _place_local_points(base_x, base_y, dir_x, dir_y, local_points):
+    """Transforms local (right, forward) points into world meters, oriented
+    by the given forward direction — same idea as to_screen's rotation, just
+    per-chevron instead of per-frame."""
+    right_x, right_y = dir_y, -dir_x
+    return [(base_x + right_x * lx + dir_x * ly, base_y + right_y * lx + dir_y * ly) for lx, ly in local_points]
+
+
+def _chevron_placements(route_pts, spacing_m):
+    """Walks the route polyline at a fixed real-world distance interval,
+    yielding (x, y, dir_x, dir_y) for each chevron — spacing by distance
+    rather than by point index keeps the chevrons evenly spaced regardless
+    of how densely the route's own points are packed."""
+    if len(route_pts) < 2:
+        return []
+    placements = []
+    dist_since_last = spacing_m / 2  # first chevron a bit into the route, not right at the start
+    for i in range(len(route_pts) - 1):
+        x0, y0 = route_pts[i]
+        x1, y1 = route_pts[i + 1]
+        seg_dx, seg_dy = x1 - x0, y1 - y0
+        seg_len = math.hypot(seg_dx, seg_dy)
+        if seg_len < 1e-6:
+            continue
+        dir_x, dir_y = seg_dx / seg_len, seg_dy / seg_len
+        pos_along = 0.0
+        while dist_since_last + (seg_len - pos_along) >= spacing_m:
+            pos_along += spacing_m - dist_since_last
+            placements.append((x0 + dir_x * pos_along, y0 + dir_y * pos_along, dir_x, dir_y))
+            dist_since_last = 0.0
+        dist_since_last += seg_len - pos_along
+    return placements
 
 
 class MapView:
@@ -153,6 +209,23 @@ class MapView:
             center_px = max(1, round(max(MIN_ROAD_WIDTH_PX, ROUTE_CENTER_WIDTH_M * px_per_m)))
             pygame.draw.lines(surface, ROUTE_BORDER_COLOR, False, route_screen, border_px)
             pygame.draw.lines(surface, ROUTE_CENTER_COLOR, False, route_screen, center_px)
+
+            # direction chevrons on top of the route line — same border/fill
+            # colors as the route itself, spaced by real-world distance.
+            for px, py, dir_x, dir_y in _chevron_placements(self.route, CHEVRON_SPACING_M):
+                dx, dy = px - self.x, py - self.y
+                if dx * dx + dy * dy > self.view_radius_m * self.view_radius_m:
+                    continue
+                border_pts = _place_local_points(px, py, dir_x, dir_y, _chevron_local_points(
+                    CHEVRON_WIDTH_M + CHEVRON_BORDER_MARGIN_M * 2,
+                    CHEVRON_LENGTH_M + CHEVRON_BORDER_MARGIN_M * 2,
+                    CHEVRON_NOTCH_M + CHEVRON_BORDER_MARGIN_M,
+                ))
+                fill_pts = _place_local_points(
+                    px, py, dir_x, dir_y, _chevron_local_points(CHEVRON_WIDTH_M, CHEVRON_LENGTH_M, CHEVRON_NOTCH_M)
+                )
+                pygame.draw.polygon(surface, ROUTE_BORDER_COLOR, [to_screen(wx, wy) for wx, wy in border_pts])
+                pygame.draw.polygon(surface, ROUTE_CENTER_COLOR, [to_screen(wx, wy) for wx, wy in fill_pts])
 
         # bezel ring (cosmetic reference for the round glass)
         pygame.draw.circle(surface, BEZEL_COLOR, (center, center), center - 1, width=2)

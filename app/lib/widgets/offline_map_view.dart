@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -48,6 +49,106 @@ const double _maxMetersPerPixel = 200.0;
 const Color routeOrange = Color(0xFFFF9811);
 const double routeBorderWidthM = 12.0;
 const double routeCenterWidthM = 8.0;
+
+// Direction chevrons drawn on top of the route — same colors as the route
+// line, but wider so they stick out either side. Mirrors
+// maps/visualiser.py's CHEVRON_* constants and geometry exactly. Public so
+// both this widget and device_preview_map.dart draw identical chevrons.
+const double chevronWidthM = 22.0; // wider than routeBorderWidthM so it pokes out both sides
+const double chevronLengthM = 20.0;
+const double chevronNotchM = 8.0; // how far the back notch cuts forward, giving the arrow its "V"
+const double chevronBorderMarginM = 3.0; // white outline thickness around each chevron
+const double chevronSpacingM = 100.0; // real-world distance between chevrons along the route
+
+/// A forward-pointing arrow/flag shape (tip, back-right, back-notch,
+/// back-left) in world meters — mirrors maps/visualiser.py's
+/// _chevron_local_points/_place_local_points and
+/// firmware/src/MapRenderer.h's chevronWorldPoints exactly.
+List<({double x, double y})> chevronWorldPoints(
+  double baseX,
+  double baseY,
+  double fx,
+  double fy,
+  double widthM,
+  double lengthM,
+  double notchM,
+) {
+  final rx = fy, ry = -fx;
+  final halfW = widthM / 2, halfL = lengthM / 2;
+  final localX = [0.0, halfW, 0.0, -halfW];
+  final localY = [halfL, -halfL, -halfL + notchM, -halfL];
+  return [
+    for (var i = 0; i < 4; i++)
+      (x: baseX + rx * localX[i] + fx * localY[i], y: baseY + ry * localX[i] + fy * localY[i]),
+  ];
+}
+
+/// Walks a route polyline at a fixed real-world distance interval, yielding
+/// a chevron placement (position + forward direction) at each — mirrors
+/// maps/visualiser.py's _chevron_placements exactly.
+List<({double x, double y, double dirX, double dirY})> chevronPlacements(
+  List<({double x, double y})> routePoints,
+  double spacingM,
+) {
+  if (routePoints.length < 2) return [];
+  final placements = <({double x, double y, double dirX, double dirY})>[];
+  var distSinceLast = spacingM / 2;
+  for (var i = 0; i < routePoints.length - 1; i++) {
+    final x0 = routePoints[i].x, y0 = routePoints[i].y;
+    final x1 = routePoints[i + 1].x, y1 = routePoints[i + 1].y;
+    final segDx = x1 - x0, segDy = y1 - y0;
+    final segLen = sqrt(segDx * segDx + segDy * segDy);
+    if (segLen < 1e-6) continue;
+    final dirX = segDx / segLen, dirY = segDy / segLen;
+    var posAlong = 0.0;
+    while (distSinceLast + (segLen - posAlong) >= spacingM) {
+      posAlong += spacingM - distSinceLast;
+      placements.add((x: x0 + dirX * posAlong, y: y0 + dirY * posAlong, dirX: dirX, dirY: dirY));
+      distSinceLast = 0;
+    }
+    distSinceLast += segLen - posAlong;
+  }
+  return placements;
+}
+
+/// Draws direction chevrons on top of an already-drawn route line, using
+/// [toScreen] to project each chevron's world-meters points — shared by
+/// both this widget's north-up painter and device_preview_map.dart's
+/// heading-up one, which differ only in how world coords map to screen.
+void drawRouteChevrons(Canvas canvas, List<({double x, double y})> routePoints, Offset Function(double, double) toScreen) {
+  final borderPaint = Paint()..color = Colors.white;
+  final fillPaint = Paint()..color = routeOrange;
+  for (final p in chevronPlacements(routePoints, chevronSpacingM)) {
+    final borderPts = chevronWorldPoints(
+      p.x,
+      p.y,
+      p.dirX,
+      p.dirY,
+      chevronWidthM + chevronBorderMarginM * 2,
+      chevronLengthM + chevronBorderMarginM * 2,
+      chevronNotchM + chevronBorderMarginM,
+    );
+    final fillPts = chevronWorldPoints(p.x, p.y, p.dirX, p.dirY, chevronWidthM, chevronLengthM, chevronNotchM);
+    _fillChevronDart(canvas, borderPts, toScreen, borderPaint);
+    _fillChevronDart(canvas, fillPts, toScreen, fillPaint);
+  }
+}
+
+void _fillChevronDart(
+  Canvas canvas,
+  List<({double x, double y})> pts,
+  Offset Function(double, double) toScreen,
+  Paint paint,
+) {
+  final screen = [for (final p in pts) toScreen(p.x, p.y)];
+  final path = Path()
+    ..moveTo(screen[0].dx, screen[0].dy)
+    ..lineTo(screen[1].dx, screen[1].dy)
+    ..lineTo(screen[2].dx, screen[2].dy)
+    ..lineTo(screen[3].dx, screen[3].dy)
+    ..close();
+  canvas.drawPath(path, paint);
+}
 
 /// A point to draw on the map, in the same world-meters frame as the map
 /// data (see lib/services/ble_protocol.dart's projectLatLon).
@@ -307,6 +408,12 @@ class _OfflineMapPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round,
       );
+      // Chevrons only on the selected route — the translucent unselected
+      // comparison route is already visually secondary, and a solid orange
+      // arrow trail on it would fight with that.
+      if (route.selected) {
+        drawRouteChevrons(canvas, route.points, (wx, wy) => Offset(sx(wx), sy(wy)));
+      }
     }
   }
 

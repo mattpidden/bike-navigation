@@ -60,9 +60,38 @@ static const uint16_t COLOR_ROUTE_CENTER = RGB565(0xFF, 0x98, 0x11);  // #ff9811
 static const float ROUTE_BORDER_WIDTH_M = 12.0f;
 static const float ROUTE_CENTER_WIDTH_M = 8.0f;
 
+// Direction chevrons drawn on top of the route — same colors as the route
+// line itself, but wider so they stick out either side. Mirrors
+// maps/visualiser.py's CHEVRON_* constants and geometry exactly.
+static const uint16_t COLOR_CHEVRON_BORDER = COLOR_ROUTE_BORDER;
+static const uint16_t COLOR_CHEVRON_FILL = COLOR_ROUTE_CENTER;
+static const float CHEVRON_WIDTH_M = 22.0f;   // wider than ROUTE_BORDER_WIDTH_M so it pokes out both sides
+static const float CHEVRON_LENGTH_M = 20.0f;
+static const float CHEVRON_NOTCH_M = 8.0f;    // how far the back notch cuts forward, giving the arrow its "V"
+static const float CHEVRON_BORDER_MARGIN_M = 3.0f;  // white outline thickness around each chevron
+static const float CHEVRON_SPACING_M = 100.0f;      // real-world distance between chevrons along the route
+
 static inline uint32_t mapReadU32(const uint8_t* p) { uint32_t v; memcpy(&v, p, 4); return v; }
 static inline uint16_t mapReadU16(const uint8_t* p) { uint16_t v; memcpy(&v, p, 2); return v; }
 static inline int16_t  mapReadI16(const uint8_t* p) { int16_t v; memcpy(&v, p, 2); return v; }
+
+// A forward-pointing arrow/flag shape in world meters: a tip at the front
+// and a V-notch cut into the back edge (points[0]=tip, [1]=back-right,
+// [2]=back-notch, [3]=back-left) — mirrors
+// maps/visualiser.py's _chevron_local_points/_place_local_points exactly.
+// (fx,fy) is the forward unit vector; right is the perpendicular (fy,-fx).
+static inline void chevronWorldPoints(float baseX, float baseY, float fx, float fy,
+                                       float widthM, float lengthM, float notchM,
+                                       float outX[4], float outY[4]) {
+  float rx = fy, ry = -fx;
+  float halfW = widthM / 2.0f, halfL = lengthM / 2.0f;
+  float localX[4] = { 0.0f,   halfW,  0.0f,             -halfW };
+  float localY[4] = { halfL, -halfL, -halfL + notchM,   -halfL };
+  for (int i = 0; i < 4; i++) {
+    outX[i] = baseX + rx * localX[i] + fx * localY[i];
+    outY[i] = baseY + ry * localX[i] + fy * localY[i];
+  }
+}
 
 // posX/posY: current position in meters relative to the map origin (home).
 // headingDeg: degrees clockwise from north — the map rotates so this is always "up".
@@ -192,6 +221,53 @@ void drawMap(TFT_eSprite &frame, float posX, float posY, float headingDeg, float
       frame.drawWideLine(prevSx, prevSy, sx, sy, ROUTE_CENTER_WIDTH_M * pxPerM, COLOR_ROUTE_CENTER);
       prevSx = sx;
       prevSy = sy;
+    }
+
+    // Direction chevrons on top of the route line. Walks the route at a
+    // fixed real-world distance interval — mirrors
+    // maps/visualiser.py's _chevron_placements exactly, including the
+    // half-spacing offset so the first chevron isn't right at the route start.
+    float distSinceLast = CHEVRON_SPACING_M / 2.0f;
+    for (uint16_t i = 0; i < routeCount - 1; i++) {
+      float x0 = routePts[i].x, y0 = routePts[i].y;
+      float x1 = routePts[i + 1].x, y1 = routePts[i + 1].y;
+      float segDx = x1 - x0, segDy = y1 - y0;
+      float segLen = sqrtf(segDx * segDx + segDy * segDy);
+      if (segLen < 1e-6f) continue;
+      float dirX = segDx / segLen, dirY = segDy / segLen;
+      float posAlong = 0.0f;
+      while (distSinceLast + (segLen - posAlong) >= CHEVRON_SPACING_M) {
+        posAlong += CHEVRON_SPACING_M - distSinceLast;
+        float px = x0 + dirX * posAlong;
+        float py = y0 + dirY * posAlong;
+        distSinceLast = 0.0f;
+
+        float ddx = px - posX, ddy = py - posY;
+        if (ddx * ddx + ddy * ddy > viewRadiusM * viewRadiusM) continue;
+
+        float bx[4], by[4], fx4[4], fy4[4];
+        chevronWorldPoints(px, py, dirX, dirY,
+                            CHEVRON_WIDTH_M + CHEVRON_BORDER_MARGIN_M * 2.0f,
+                            CHEVRON_LENGTH_M + CHEVRON_BORDER_MARGIN_M * 2.0f,
+                            CHEVRON_NOTCH_M + CHEVRON_BORDER_MARGIN_M,
+                            bx, by);
+        chevronWorldPoints(px, py, dirX, dirY, CHEVRON_WIDTH_M, CHEVRON_LENGTH_M, CHEVRON_NOTCH_M, fx4, fy4);
+
+        float bsx[4], bsy[4], fsx[4], fsy[4];
+        for (int k = 0; k < 4; k++) {
+          bsx[k] = toScreenX(bx[k], by[k]);
+          bsy[k] = toScreenY(bx[k], by[k]);
+          fsx[k] = toScreenX(fx4[k], fy4[k]);
+          fsy[k] = toScreenY(fx4[k], fy4[k]);
+        }
+        // Dart-shaped quad = 2 triangles sharing the tip(0)-notch(2) diagonal,
+        // which is the shape's axis of symmetry.
+        frame.fillTriangle(bsx[0], bsy[0], bsx[1], bsy[1], bsx[2], bsy[2], COLOR_CHEVRON_BORDER);
+        frame.fillTriangle(bsx[0], bsy[0], bsx[2], bsy[2], bsx[3], bsy[3], COLOR_CHEVRON_BORDER);
+        frame.fillTriangle(fsx[0], fsy[0], fsx[1], fsy[1], fsx[2], fsy[2], COLOR_CHEVRON_FILL);
+        frame.fillTriangle(fsx[0], fsy[0], fsx[2], fsy[2], fsx[3], fsy[3], COLOR_CHEVRON_FILL);
+      }
+      distSinceLast += segLen - posAlong;
     }
   }
 
