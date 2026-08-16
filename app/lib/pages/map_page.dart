@@ -30,8 +30,23 @@ String _formatDuration(double seconds) {
 
 // Notifier.fetchRouteOptions fetches one driving-mode and one bicycling-mode
 // route — a real difference in Google's own routing engine (bicycling mode
-// actually prefers cycle lanes/paths), not a relabeled alternative.
-String _routeLabel(bool cycling) => cycling ? 'Cycle-friendly' : 'Fastest';
+// actually prefers cycle lanes/paths), not a relabeled alternative. The
+// driving-mode one isn't necessarily fastest or shortest for a cyclist (it's
+// just the most direct route a car would take, not detouring for cycle
+// infrastructure), so "Direct route" is the honest label rather than
+// claiming a speed/distance property that isn't guaranteed.
+String _routeLabel(bool cycling) => cycling ? 'Cycle-friendly' : 'Direct route';
+
+// The driving-mode ("Direct route") route's own duration is Google's
+// car-speed estimate, which is misleading on a bike computer — Google has no
+// "give me this distance at cycling speed" option, so instead we derive a
+// duration from distance and a typical average urban cycling speed. Not turn-by-turn
+// accurate, but far more honest than showing how fast a car would do it.
+// The bicycling-mode ("Cycle-friendly") route already has a real cycling
+// estimate from Google and is left untouched.
+const double _avgCyclingSpeedMps = 15000 / 3600; // ~15 km/h
+double _displayDurationSeconds(DirectionsRoute route, bool cycling) =>
+    cycling ? route.totalDurationSeconds : route.totalDistanceMeters / _avgCyclingSpeedMps;
 
 /// The app's home screen: a full-screen, freely pannable map (the same
 /// offline map data/style the wearable renders) with a Google-Maps-style
@@ -228,28 +243,69 @@ class _MapPageState extends State<MapPage> {
       animation: _controller,
       builder: (context, _) {
         final size = MediaQuery.sizeOf(context);
+        final positions = _computeBadgePositions(routeOptions, size);
         return Stack(
           children: [
             for (var i = 0; i < routeOptions.length; i++)
-              if (routeOptions[i].polylinePoints.isNotEmpty) _buildRouteBadge(routeOptions, i, notifier, size),
+              if (positions[i] != null) _buildRouteBadge(routeOptions, i, notifier, positions[i]!),
           ],
         );
       },
     );
   }
 
-  Widget _buildRouteBadge(List<DirectionsRoute> routeOptions, int index, Notifier notifier, Size size) {
+  // Driving and cycling directions often share most of their path (they
+  // only diverge for a short stretch), so their polyline midpoints — and
+  // therefore their badges — frequently land right on top of each other.
+  // When that happens, spread them vertically around their shared midpoint
+  // instead of letting them overlap.
+  static const double _badgeOverlapThresholdPx = 90.0;
+  static const double _badgeSeparationPx = 34.0;
+
+  List<Offset?> _computeBadgePositions(List<DirectionsRoute> routeOptions, Size size) {
+    final positions = <Offset?>[
+      for (final route in routeOptions)
+        if (route.polylinePoints.isEmpty)
+          null
+        else
+          _worldToScreen(
+            projectLatLon(
+              route.polylinePoints[route.polylinePoints.length ~/ 2].latitude,
+              route.polylinePoints[route.polylinePoints.length ~/ 2].longitude,
+            ),
+            size,
+          ),
+    ];
+
+    if (positions.length == 2 && positions[0] != null && positions[1] != null) {
+      final a = positions[0]!;
+      final b = positions[1]!;
+      if ((a - b).distance < _badgeOverlapThresholdPx) {
+        final mid = Offset((a.dx + b.dx) / 2, (a.dy + b.dy) / 2);
+        positions[0] = Offset(mid.dx, mid.dy - _badgeSeparationPx);
+        positions[1] = Offset(mid.dx, mid.dy + _badgeSeparationPx);
+      }
+    }
+
+    return positions;
+  }
+
+  Offset _worldToScreen(({double x, double y}) local, Size size) {
+    return Offset(
+      size.width / 2 + (local.x - _controller.centerX) / _controller.metersPerPixel,
+      size.height / 2 - (local.y - _controller.centerY) / _controller.metersPerPixel,
+    );
+  }
+
+  Widget _buildRouteBadge(List<DirectionsRoute> routeOptions, int index, Notifier notifier, Offset center) {
     final route = routeOptions[index];
-    final mid = route.polylinePoints[route.polylinePoints.length ~/ 2];
-    final local = projectLatLon(mid.latitude, mid.longitude);
-    final screenX = size.width / 2 + (local.x - _controller.centerX) / _controller.metersPerPixel;
-    final screenY = size.height / 2 - (local.y - _controller.centerY) / _controller.metersPerPixel;
+    final cycling = notifier.routeOptionIsCycling[index];
     final selected = index == notifier.selectedRouteOptionIndex;
     final textColor = selected ? Colors.white : Colors.black87;
 
     return Positioned(
-      left: screenX - 48,
-      top: screenY - 22,
+      left: center.dx - 48,
+      top: center.dy - 22,
       child: Material(
         elevation: 3,
         color: selected ? const Color(0xFFFF9811) : Colors.white,
@@ -263,11 +319,11 @@ class _MapPageState extends State<MapPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _routeLabel(notifier.routeOptionIsCycling[index]),
+                  _routeLabel(cycling),
                   style: TextStyle(fontSize: 10, color: textColor.withValues(alpha: 0.85)),
                 ),
                 Text(
-                  _formatDuration(route.totalDurationSeconds),
+                  _formatDuration(_displayDurationSeconds(route, cycling)),
                   style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
                 ),
               ],
@@ -281,6 +337,10 @@ class _MapPageState extends State<MapPage> {
   Widget _buildBottomCard(Notifier notifier) {
     final route = notifier.selectedRouteOption ?? notifier.previewRoute;
     final showingOptions = notifier.routeOptions.isNotEmpty;
+    // Before "Directions" is tapped there's no routeOptionIsCycling entry to
+    // check — previewRoute was fetched using whatever cycleRoute mode was
+    // active at the time, which is exactly what that getter still reflects.
+    final cycling = showingOptions ? notifier.routeOptionIsCycling[notifier.selectedRouteOptionIndex] : notifier.cycleRoute;
 
     return Positioned(
       left: 0,
@@ -316,8 +376,8 @@ class _MapPageState extends State<MapPage> {
                   const Text('No route found.')
                 else ...[
                   Text(
-                    '${showingOptions ? '${_routeLabel(notifier.routeOptionIsCycling[notifier.selectedRouteOptionIndex])} · ' : ''}'
-                    '${_formatDistance(route.totalDistanceMeters)} · ${_formatDuration(route.totalDurationSeconds)} · '
+                    '${showingOptions ? '${_routeLabel(cycling)} · ' : ''}'
+                    '${_formatDistance(route.totalDistanceMeters)} · ${_formatDuration(_displayDurationSeconds(route, cycling))} · '
                     '${route.steps.length} steps',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
