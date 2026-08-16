@@ -15,17 +15,12 @@
 #include <BLE2902.h>
 #include <time.h>
 #include <ArduinoJson.h>
+#include "MapRenderer.h"
 
 
 // Global variables
 TFT_eSPI tft = TFT_eSPI();  // Create object "tft"
 TFT_eSprite frame = TFT_eSprite(&tft);
-float ballX = 120; 
-float ballY = 120;
-const int screenRadius = 120;
-const int centerX = 120;
-const int centerY = 120;
-const int ballRadius = 10;
 String currentTime = "09:41";
 unsigned long lastTimeUpdate = 0;
 int hours = 9;
@@ -414,7 +409,7 @@ BLEServer* pServer;
 // Extra Functions
 void setState(AppState newState) {
   currentState = newState;
-  tft.fillScreen(TFT_BLACK); // clear when switching
+  tft.fillScreen(COLOR_BG); // clear when switching
 }
 
 class ServerCallbacks : public BLEServerCallbacks {
@@ -562,7 +557,7 @@ void setup(void) {
   Serial.println("IMU On");
   tft.init();
   tft.setRotation(0);
-  tft.fillScreen(TFT_BLACK);
+  tft.fillScreen(COLOR_BG);
   Serial.println("Screen On!");
   frame.createSprite(240, 240);
   setupBLE();
@@ -573,42 +568,36 @@ void setup(void) {
 // -------------------------------------------------------------------------
 // Main loop
 // -------------------------------------------------------------------------
+// Until real GPS/heading data is flowing over BLE, drive the map with a
+// scripted stroll around home so the renderer can be seen/tuned on the bench.
+static float demoX = 0, demoY = 0, demoHeading = 0;
+static unsigned long lastDemoMs = 0;
+const float DEMO_SPEED_MPS = 4.0f;
+const float DEMO_TURN_DPS = 6.0f;
+const float MAP_VIEW_RADIUS_M = 150.0f;
+
 void drawHomeScreen() {
-  frame.fillSprite(TFT_BLACK);
-  // Read IMU
-  float acc[3], gyro[3];
-  unsigned int tim_count;
-  QMI8658_read_xyz(gyro, acc, &tim_count);  
-  float acc_mag = sqrt(acc[0]*acc[0] + acc[1]*acc[1] + acc[2]*acc[2]);
-  float vx = 0;
-  float vy = 0;
-  vx = gyro[0] / -100.0;  
-  vy = gyro[1] / -100.0;
-  ballX += vx;
-  ballY += vy;
-  float dx = ballX - centerX;
-  float dy = ballY - centerY;
-  float dist = sqrt(dx*dx + dy*dy);
-  float maxDist = screenRadius - ballRadius;
-  
-  if (dist > maxDist) {
-    // push the ball back to the edge along the vector from center
-    float scale = maxDist / dist;
-    ballX = centerX + dx * scale;
-    ballY = centerY + dy * scale;
-  }
-  
+  frame.fillSprite(COLOR_BG);
+
+  unsigned long nowMs = millis();
+  float dt = lastDemoMs == 0 ? 0.0f : (nowMs - lastDemoMs) / 1000.0f;
+  lastDemoMs = nowMs;
+  demoHeading = fmodf(demoHeading + DEMO_TURN_DPS * dt, 360.0f);
+  float headingRad = demoHeading * DEG_TO_RAD;
+  demoX += sinf(headingRad) * DEMO_SPEED_MPS * dt;
+  demoY += cosf(headingRad) * DEMO_SPEED_MPS * dt;
+
+  drawMap(frame, demoX, demoY, demoHeading, MAP_VIEW_RADIUS_M);
+
   if (deviceConnected) {
     frame.drawBitmap(110, 215, ble_bitmap, 20, 20, TFT_WHITE);
   }
-  frame.fillCircle((int)ballX, (int)ballY, ballRadius, tft.color565(255, 140, 0));
   drawCenteredText(batteryStatus, 15, 1);
-  drawCenteredText(currentTime, 120, 3);
   frame.pushSprite(0, 0);
 }
 
 void drawNavigationScreen() {
-  frame.fillSprite(TFT_BLACK);
+  frame.fillSprite(COLOR_BG);
   if (currentNavInstruction == NAV_STRAIGHT) {
     frame.drawBitmap(60, 50, straight_bitmap, 120, 120, TFT_WHITE);
     drawCenteredText(nextRoad, 180, 1);
@@ -635,7 +624,7 @@ void drawNavigationScreen() {
 }
 
 void drawArrivedScreen() {
-  frame.fillSprite(TFT_BLACK);
+  frame.fillSprite(COLOR_BG);
   drawCenteredText("ARRIVED", 120, 3);
   drawCenteredText(batteryStatus, 15, 1);
   frame.pushSprite(0, 0);
