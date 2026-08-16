@@ -236,6 +236,7 @@ class Notifier with ChangeNotifier {
     _isFetchingRoute = true;
     _destinationName = destination;
     _routeOptions = [];
+    _routeOptionIsCycling = [];
     _selectedRouteOptionIndex = 0;
     notifyListeners();
 
@@ -308,6 +309,7 @@ class Notifier with ChangeNotifier {
     _activeRoute = route;
     _previewRoute = null;
     _routeOptions = [];
+    _routeOptionIsCycling = [];
     _navMode = NavMode.navigating;
     notifyListeners();
 

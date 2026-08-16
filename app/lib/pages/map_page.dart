@@ -52,7 +52,7 @@ const double _fallbackCyclingSpeedMps = 15000 / 3600; // ~15 km/h
 
 double _cyclingSpeedMps(List<DirectionsRoute> routeOptions, List<bool> isCycling) {
   final i = isCycling.indexOf(true);
-  if (i < 0 || routeOptions[i].totalDurationSeconds <= 0) return _fallbackCyclingSpeedMps;
+  if (i < 0 || i >= routeOptions.length || routeOptions[i].totalDurationSeconds <= 0) return _fallbackCyclingSpeedMps;
   return routeOptions[i].totalDistanceMeters / routeOptions[i].totalDurationSeconds;
 }
 
