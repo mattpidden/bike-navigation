@@ -26,7 +26,8 @@ cad/       3D-printable enclosure (STL files)
 ## Hardware
 
 - [Waveshare ESP32-S3-Touch-LCD-1.28](https://www.waveshare.com/esp32-s3-touch-lcd-1.28.htm) — ESP32-S3 with a built-in 240×240 round GC9A01 LCD and QMI8658 IMU. This board's built-in battery-voltage ADC is used for the battery indicator; the IMU isn't currently used for anything (heading comes from the phone's GPS instead). ([buy](https://www.amazon.co.uk/dp/B0CSFFHNWT))
-- A LiPo battery compatible with the board's JST connector. <!-- TODO: confirm which of these is the battery --> ([buy](https://www.amazon.co.uk/dp/B08215WQMQ), [buy](https://www.amazon.co.uk/dp/B0817GD1Y8))
+- A LiPo battery compatible with the board's JST connector. ([buy](https://www.amazon.co.uk/dp/B08215WQMQ))
+- An on/off switch. These aren't commonly sold individually — the linked product is a multi-pack of assorted switches, of which you only need one. ([buy](https://www.amazon.co.uk/dp/B0817GD1Y8))
 - The 3D-printed enclosure in `cad/`: `Concept Body`, `Concept Lid`, `Concept Mount` (an STL each). No particular print settings are prescribed — just make sure the LCD cutout and any port openings line up with your printer's tolerances before committing to a full print.
 
 CAD design and enclosure by Tom Pidden.
