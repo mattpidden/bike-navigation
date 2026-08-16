@@ -1,6 +1,6 @@
 # Bike Navigation
 
-A DIY bike computer: a 3D-printed wearable display (ESP32-S3 + round LCD) paired over Bluetooth to a phone app, showing a live, rendered map with your position and route — no phone screen required once you're riding.
+A DIY bike computer: a 3D-printed, handlebar-mounted display (ESP32-S3 + round LCD) paired over Bluetooth to a phone app, showing a live, rendered map with your position and route — no phone screen required once you're riding.
 
 <p>
   <!-- TODO: add a photo of the assembled device / a screenshot of the app here -->
@@ -8,11 +8,15 @@ A DIY bike computer: a 3D-printed wearable display (ESP32-S3 + round LCD) paired
 
 ## How it works
 
-- **The app** (Flutter, Android/iOS) gets your GPS location and, when you pick a destination, a cycling route from Google Directions. It streams your position, heading, and route to the wearable over Bluetooth Low Energy.
-- **The wearable** (ESP32-S3 + round LCD) renders an offline vector map — roads, water, parks — baked into its own flash storage, and draws your live position/route on top of it. It doesn't need a network connection or GPS of its own; the phone supplies the data.
-- **The map data** for both the wearable and the app's own on-screen map comes from OpenStreetMap, processed by a small Python pipeline in `maps/` into a compact custom binary format.
+- **The app** (Flutter, Android/iOS) gets your GPS location and, when you pick a destination, a cycling route from Google Directions. It streams your position, heading, and route to the bike-mounted display over Bluetooth Low Energy.
+- **The display** (ESP32-S3 + round LCD, twist-locked onto a handlebar mount) renders an offline vector map — roads, water, parks — baked into its own flash storage, and draws your live position/route on top of it. It doesn't need a network connection or GPS of its own; the phone supplies the data.
+- **The map data** for both the display and the app's own on-screen map comes from OpenStreetMap, processed by a small Python pipeline in `maps/` into a compact custom binary format.
 
 This is a hobby project, not a product — expect some rough edges, and treat the build instructions below as "this is how I did it," not a fully productised guide.
+
+## Disclaimer
+
+This is a hobbyist project, not a certified navigation or safety device. Route/map data can be wrong, outdated, or missing entirely, and Google's routing has no awareness of this project's hardware or your specific bike. Always use your own judgement: check a route before and while riding, don't follow it onto roads you shouldn't be cycling on (motorways, etc.), and obey local traffic laws regardless of what's on the screen. You use this project, and build/ride with it, entirely at your own risk — the author(s) accept no liability for any injury, damage, or other consequence arising from its use.
 
 ## Repo layout
 
@@ -28,7 +32,7 @@ cad/       3D-printable enclosure (STL files)
 - [Waveshare ESP32-S3-Touch-LCD-1.28](https://www.waveshare.com/esp32-s3-touch-lcd-1.28.htm) — ESP32-S3 with a built-in 240×240 round GC9A01 LCD and QMI8658 IMU. This board's built-in battery-voltage ADC is used for the battery indicator; the IMU isn't currently used for anything (heading comes from the phone's GPS instead). ([buy](https://www.amazon.co.uk/dp/B0CSFFHNWT))
 - A LiPo battery compatible with the board's JST connector. ([buy](https://www.amazon.co.uk/dp/B08215WQMQ))
 - An on/off switch. These aren't commonly sold individually — the linked product is a multi-pack of assorted switches, of which you only need one. ([buy](https://www.amazon.co.uk/dp/B0817GD1Y8))
-- The 3D-printed enclosure in `cad/`: `Concept Body`, `Concept Lid`, `Concept Mount` (an STL each). No particular print settings are prescribed — just make sure the LCD cutout and any port openings line up with your printer's tolerances before committing to a full print.
+- The 3D-printed enclosure in `cad/`: `Concept Body` and `Concept Lid` house the electronics and twist-lock onto `Concept Mount`, which screws into the stem cap bolt in the center of your handlebars (the same mounting point Garmin/Wahoo-style quarter-turn bike computer mounts use). No particular print settings are prescribed — just make sure the LCD cutout, port openings, and the twist-lock tolerance line up with your printer before committing to a full print.
 
 CAD design and enclosure by Tom Pidden.
 
@@ -74,7 +78,7 @@ The repo ships with `maps/map.bin` pre-built for Central London. To cover your o
 2. Put the downloaded file in `maps/`, and in `maps/build_map.py`, update:
    - `PBF` to point to your downloaded file.
    - `ORIGIN_LAT` / `ORIGIN_LON` to a point near the center of your area — everything is stored as meters relative to this point.
-3. **Also update the matching origin constants in `app/lib/services/ble_protocol.dart`** (`originLat`/`originLon`) to the exact same values. The app projects GPS coordinates into this same local coordinate frame before sending them to the wearable — if the two origins don't match, your live position won't line up with the map.
+3. **Also update the matching origin constants in `app/lib/services/ble_protocol.dart`** (`originLat`/`originLon`) to the exact same values. The app projects GPS coordinates into this same local coordinate frame before sending them to the display — if the two origins don't match, your live position won't line up with the map.
 4. Install [GDAL](https://gdal.org/) (provides the `ogr2ogr` command-line tool the pipeline shells out to) and Python 3.
 5. `cd maps && python3 build_map.py` — this produces the new `map.bin`.
 6. `python3 export_firmware.py` — converts `map.bin` into `firmware/src/map_data.h`; re-flash the firmware afterwards.
