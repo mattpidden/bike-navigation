@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -40,8 +39,11 @@ class Notifier with ChangeNotifier {
   bool _cycleRoute = true; // a bike computer defaults to bicycling directions
 
   StreamSubscription<Position>? _positionSub;
-  StreamSubscription<CompassEvent>? _compassSub;
   Timer? _telemetryTimer;
+
+  // Below this speed, GPS course-over-ground is too noisy to trust, so we
+  // hold the last known heading instead of updating it.
+  static const double _minHeadingSpeedMps = 1.5;
 
   NavMode _navMode = NavMode.home;
   DirectionsRoute? _previewRoute; // fetched but not yet started
@@ -68,13 +70,21 @@ class Notifier with ChangeNotifier {
     if (!allowed) return;
     await _refreshUserLocation();
     _listenToLocation();
-    _listenToCompass();
     _startTelemetryTimer();
   }
 
   Future<bool> _requestLocationPermission() async {
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.whileInUse) {
+      // On Android this escalates to "Allow all the time" (needed to keep
+      // tracking with the screen off/locked). On iOS, geolocator only ever
+      // grants When In Use once NSLocationWhenInUseUsageDescription is set,
+      // so this call is a harmless no-op there — background updates on iOS
+      // instead rely on allowBackgroundLocationUpdates below, which works
+      // under When In Use as long as tracking is already active.
       permission = await Geolocator.requestPermission();
     }
     return permission != LocationPermission.denied && permission != LocationPermission.deniedForever;
@@ -94,16 +104,29 @@ class Notifier with ChangeNotifier {
 
   void _listenToLocation() {
     _positionSub?.cancel();
-    _positionSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 5),
-    ).listen(_onPosition);
-  }
-
-  void _listenToCompass() {
-    _compassSub?.cancel();
-    _compassSub = FlutterCompass.events?.listen((event) {
-      _heading = event.heading ?? _heading;
-    });
+    final LocationSettings settings;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      settings = AndroidSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 5,
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'Bike Navigation',
+          notificationText: 'Tracking your location for navigation',
+        ),
+      );
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      settings = AppleSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 5,
+        activityType: ActivityType.fitness,
+        pauseLocationUpdatesAutomatically: false,
+        allowBackgroundLocationUpdates: true,
+        showBackgroundLocationIndicator: true,
+      );
+    } else {
+      settings = const LocationSettings(accuracy: LocationAccuracy.best, distanceFilter: 5);
+    }
+    _positionSub = Geolocator.getPositionStream(locationSettings: settings).listen(_onPosition);
   }
 
   void _startTelemetryTimer() {
@@ -113,6 +136,9 @@ class Notifier with ChangeNotifier {
 
   void _onPosition(Position pos) {
     _userLocation = LatLng(pos.latitude, pos.longitude);
+    if (pos.speed >= _minHeadingSpeedMps) {
+      _heading = pos.heading;
+    }
 
     if (_navMode == NavMode.navigating && _routeTracker != null) {
       final local = projectLatLon(pos.latitude, pos.longitude);
@@ -232,7 +258,6 @@ class Notifier with ChangeNotifier {
   @override
   void dispose() {
     _positionSub?.cancel();
-    _compassSub?.cancel();
     _telemetryTimer?.cancel();
     _bleService.dispose();
     super.dispose();
