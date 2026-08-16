@@ -57,16 +57,37 @@ POLY_STYLE = {
     1: BLUE,   # water areas — same blue as the line-drawn waterways (class 6 above)
 }
 
+# active-route overlay: thicker casing + orange (#ff9811) centerline + direction arrows
+ROUTE_CASING_COLOR = (0x99, 0x5C, 0x0A)  # muted dark orange
+ROUTE_CENTER_COLOR = (0xFF, 0x98, 0x11)  # #ff9811
+ROUTE_ARROW_COLOR = (0x21, 0x21, 0x21)   # matches BG_COLOR so arrows read as cutouts
+ROUTE_CASING_WIDTH_M = 8.0
+ROUTE_CENTER_WIDTH_M = 3.0
+ROUTE_ARROW_SPACING_M = 20.0
+ROUTE_ARROW_SIZE_M = 2.5
+
 DEFAULT_VIEW_RADIUS_M = 150.0
 MOVE_SPEED_MPS = 6.0  # ~13mph, a plausible cycling speed
 ROTATE_SPEED_DPS = 90.0
 # ----------------------------------------------------------------------------
 
 
+def pick_demo_route(ways):
+    """No real route to preview with yet (that comes from the phone app), so borrow
+    a real nearby major road's own points as a stand-in — good enough to judge the
+    casing/centerline/arrow styling without inventing fake geometry."""
+    candidates = [w for w in ways if w.cls in (0, 1) and len(w.points) >= 6]
+    if not candidates:
+        return []
+    candidates.sort(key=lambda w: math.hypot(w.cx, w.cy))
+    return candidates[0].points
+
+
 class MapView:
-    def __init__(self, map_data: map_format.MapData):
+    def __init__(self, map_data: map_format.MapData, route=None):
         self.polygons = map_data.polygons
         self.ways = map_data.ways
+        self.route = route or []
         self.x = 0.0
         self.y = 0.0
         self.heading = 0.0  # degrees, 0 = north, clockwise
@@ -124,6 +145,36 @@ class MapView:
             if len(screen_pts) >= 2:
                 pygame.draw.lines(surface, style["color"], False, screen_pts, max(1, round(width_px)))
 
+        # active route overlay — casing, then centerline on top, then direction arrows
+        if len(self.route) >= 2:
+            route_screen = [to_screen(wx, wy) for wx, wy in self.route]
+            casing_px = max(1, round(max(MIN_ROAD_WIDTH_PX, ROUTE_CASING_WIDTH_M * px_per_m)))
+            center_px = max(1, round(max(MIN_ROAD_WIDTH_PX, ROUTE_CENTER_WIDTH_M * px_per_m)))
+            pygame.draw.lines(surface, ROUTE_CASING_COLOR, False, route_screen, casing_px)
+            pygame.draw.lines(surface, ROUTE_CENTER_COLOR, False, route_screen, center_px)
+
+            # arrow geometry is built in world meters (like everything else) then run
+            # through to_screen() — keeps it consistent with the zoom-scaling every
+            # other shape already gets, no separate pixel-space math.
+            dist_since_arrow = ROUTE_ARROW_SPACING_M  # draw one near the start too
+            for (x0, y0), (x1, y1) in zip(self.route, self.route[1:]):
+                seg_len = math.hypot(x1 - x0, y1 - y0)
+                if seg_len == 0:
+                    continue
+                dist_since_arrow += seg_len
+                if dist_since_arrow < ROUTE_ARROW_SPACING_M:
+                    continue
+                dist_since_arrow = 0.0
+                ux, uy = (x1 - x0) / seg_len, (y1 - y0) / seg_len  # world-space unit direction
+                mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+                tip_w = (mx + ux * ROUTE_ARROW_SIZE_M, my + uy * ROUTE_ARROW_SIZE_M)
+                back_w = (mx - ux * ROUTE_ARROW_SIZE_M, my - uy * ROUTE_ARROW_SIZE_M)
+                lx, ly = -uy, ux  # perpendicular, world-space
+                left_w = (back_w[0] + lx * ROUTE_ARROW_SIZE_M * 0.6, back_w[1] + ly * ROUTE_ARROW_SIZE_M * 0.6)
+                right_w = (back_w[0] - lx * ROUTE_ARROW_SIZE_M * 0.6, back_w[1] - ly * ROUTE_ARROW_SIZE_M * 0.6)
+                pygame.draw.polygon(surface, ROUTE_ARROW_COLOR,
+                                     [to_screen(*tip_w), to_screen(*left_w), to_screen(*right_w)])
+
         # bezel ring (cosmetic reference for the round glass)
         pygame.draw.circle(surface, BEZEL_COLOR, (center, center), center - 1, width=2)
 
@@ -155,7 +206,7 @@ def main():
     args = parser.parse_args()
 
     map_data = map_format.load(MAP_BIN)
-    view = MapView(map_data)
+    view = MapView(map_data, route=pick_demo_route(map_data.ways))
     view.x, view.y, view.heading, view.view_radius_m = args.x, args.y, args.heading, args.radius
 
     pygame.init()
