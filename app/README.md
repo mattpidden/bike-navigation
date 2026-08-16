@@ -1,3 +1,3 @@
 # bike_navigation
 
-A new Flutter project.
+See the [repo root README](../README.md) for setup instructions.
