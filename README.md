@@ -4,11 +4,14 @@ A DIY bike computer: a 3D-printed, handlebar-mounted display (ESP32-S3 + round L
 
 <p align="center">
   <img src="docs/images/poster.jpg" alt="Bike navigation, not phone navigation: choose a destination in the app, start navigation, then lock your phone while the handlebar display shows the map" width="600">
+<p align="center">
+  <img src="docs/images/poster.jpg" alt="Bike navigation, not phone navigation: choose a destination in the app, start navigation, then lock your phone while the handlebar display shows the map" width="600">
 </p>
 
 ## How it works
 
 - **The app** (Flutter, Android/iOS) gets your GPS location and, when you pick a destination, a cycling route from Google Directions. It streams your position, heading, and route to the bike-mounted display over Bluetooth Low Energy.
+- **The display** (ESP32-S3 + round LCD, twist-locked onto a stem faceplate mount) renders an offline vector map — roads, water, parks — baked into its own flash storage, and draws your live position/route on top of it. It doesn't need a network connection or GPS of its own; the phone supplies the data.
 - **The display** (ESP32-S3 + round LCD, twist-locked onto a stem faceplate mount) renders an offline vector map — roads, water, parks — baked into its own flash storage, and draws your live position/route on top of it. It doesn't need a network connection or GPS of its own; the phone supplies the data.
 - **The map data** for both the display and the app's own on-screen map comes from OpenStreetMap, processed by a small Python pipeline in `maps/` into a compact custom binary format.
 
