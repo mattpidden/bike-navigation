@@ -27,6 +27,25 @@ A DIY bike computer: a 3D-printed, handlebar-mounted display (ESP32-S3 + round L
   </tr>
 </table>
 
+## Build history
+
+It didn't start out looking like the photos above.
+
+<table>
+  <tr>
+    <td><img src="docs/images/prototype-v1.jpg" alt="V1 prototype: bare display in a rough case, powered over USB, showing a turn arrow and distance" width="250"></td>
+    <td><img src="docs/images/prototype-v1-mounted.jpg" alt="V1 UI on the finished twist-lock mount, now battery-powered" width="250"></td>
+  </tr>
+  <tr>
+    <td align="center">V1</td>
+    <td align="center">V1 UI, final mount + battery</td>
+  </tr>
+</table>
+
+- **V1** had a poorly designed case and a bare-bones UI, but it worked: it paired with the app and showed turn-by-turn directions. It had no battery, so it ran off USB from a power bank.
+- **Next came the hardware.** The twist-lock stem mount and an internal battery made it a self-contained unit, but the screen still showed only V1's basic turn arrow and distance.
+- **The current version** replaced the arrows with the live, rendered map shown at the top of this README.
+
 This is a hobby project, not a product — expect some rough edges, and treat the build instructions below as "this is how I did it," not a fully productised guide.
 
 ## Disclaimer
