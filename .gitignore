@@ -38,3 +38,7 @@ firmware/libaries/TFT_eSPI/
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
+
+# Original, un-stripped photos (contain GPS EXIF) — README uses the
+# metadata-stripped copies in docs/images/.
+photos/
